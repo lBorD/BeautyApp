@@ -1,3 +1,4 @@
+// filepath: src/screens/LoginScreen.jsx
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet } from 'react-native';
 
@@ -10,7 +11,7 @@ const LoginScreen = ({ navigation }) => {
     console.log('Email:', email);
     console.log('Password:', password);
     // Navigate to another screen if login is successful
-    // navigation.navigate('HomeScreen');
+    navigation.navigate('Home');
   };
 
   return (
