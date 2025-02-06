@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 
 const HomeScreen = ({ navigation }) => {
@@ -15,20 +14,6 @@ const HomeScreen = ({ navigation }) => {
         {/* Other content can go here */}
       </View>
       <View style={styles.navbarContainer}>
-        <View style={styles.navbar}>
-          <TouchableOpacity onPress={() => navigation.navigate('Clientes')}>
-            <Ionicons name="people" size={24} color="black" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Finanças')}>
-            <Ionicons name="cash" size={24} color="black" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Agenda')}>
-            <Ionicons name="calendar" size={24} color="black" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Relatório')}>
-            <Ionicons name="document" size={24} color="black" />
-          </TouchableOpacity>
-        </View>
       </View>
     </View>
   );
