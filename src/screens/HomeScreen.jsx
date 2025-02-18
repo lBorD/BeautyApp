@@ -4,8 +4,8 @@ import * as NavigationBar from 'expo-navigation-bar';
 
 const HomeScreen = ({ navigation }) => {
   useEffect(() => {
-    NavigationBar.setBackgroundColorAsync('#ffffff');
-  }, []);
+    NavigationBar.setBackgroundColorAsync('#FC1DDE');
+  }, []);''
 
   return (
     <View style={styles.container}>

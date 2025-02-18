@@ -11,7 +11,7 @@ const LoginScreen = ({ navigation }) => {
     console.log('Email:', email);
     console.log('Password:', password);
     // Navigate to another screen if login is successful
-    navigation.navigate('Home');
+    navigation.navigate('Main');
   };
 
   return (
