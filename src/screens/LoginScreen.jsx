@@ -7,10 +7,8 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
 
   const handleLogin = () => {
-    // Handle login logic here
     console.log('Email:', email);
     console.log('Password:', password);
-    // Navigate to another screen if login is successful
     navigation.navigate('Main');
   };
 

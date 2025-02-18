@@ -4,7 +4,7 @@ import { Button } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 const SettingsScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const handleLogout = () => {
     console.log('User logged out');
 
