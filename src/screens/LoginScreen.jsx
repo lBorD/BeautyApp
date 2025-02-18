@@ -1,14 +1,48 @@
 // filepath: src/screens/LoginScreen.jsx
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import validator from 'validator';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+
+
   const handleLogin = () => {
-    console.log('Email:', email);
-    console.log('Password:', password);
+
+    if (!email) {
+      Alert.alert(
+        'Digite o e-mail, por favor!',
+        'O campo de e-mail não pode ser vazio.',
+        [{
+          text: 'Perfeito',
+        }]
+      );
+      return;
+    } else if (!password) {
+      Alert.alert(
+        'Digite a senha, por favor!',
+        'O campo de senha não pode ser vazio.',
+        [{
+          text: 'Perfeito',
+        }]
+      );
+      return;
+    }
+
+    if (!validator.isEmail(email)) {
+      Alert.alert(
+        'E-mail inválido',
+        'Por favor, insira um e-mail válido.',
+        [{
+          text: 'Perfeito',
+        }]
+      );
+      return;
+    }
+
+
     navigation.navigate('Main');
   };
 
@@ -30,7 +64,16 @@ const LoginScreen = ({ navigation }) => {
         onChangeText={setPassword}
         secureTextEntry
       />
-      <Button title="Login" onPress={handleLogin} />
+      <View style={styles.button}>
+        <Button
+          title="Esqueci minha senha"
+          onPress={() => navigation.navigate('ForgotPassword')}
+        />
+      </View>
+
+      <View style={styles.button}>
+        <Button title="Entrar" onPress={handleLogin} />
+      </View>
     </View>
   );
 };
@@ -53,6 +96,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 8,
   },
+  button: {
+    marginTop: 10,
+    borderRadius: 8,
+  }
 });
 
 export default LoginScreen;
