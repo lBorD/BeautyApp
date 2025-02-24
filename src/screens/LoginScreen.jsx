@@ -42,8 +42,36 @@ const LoginScreen = ({ navigation }) => {
       return;
     }
 
-
-    navigation.navigate('Main');
+    fetch('localhost:3000/api/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          navigation.navigate('Main');
+        } else {
+          Alert.alert(
+            'Login falhou',
+            'E-mail ou senha incorretos.',
+            [{
+              text: 'Tentar novamente',
+            }]
+          );
+        }
+      })
+      .catch(error => {
+        Alert.alert(
+          'Erro',
+          'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente mais tarde.',
+          [{
+            text: 'OK',
+          }]
+        );
+      });
   };
 
   return (
