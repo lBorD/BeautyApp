@@ -5,12 +5,11 @@ import { useNavigation } from '@react-navigation/native';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
-  const handleLogout = () => {
-    console.log('User logged out');
 
+  const handleLogout = () => {
     navigation.reset({
       index: 0,
-      routes: [{ name: 'Auth' }],
+      routes: [{ name: 'Login' }],
     });
   };
 

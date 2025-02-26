@@ -10,14 +10,15 @@ import FinancasScreen from '../screens/FinancaScreen';
 import AgendaScreen from '../screens/AgendaScreen';
 import RelatorioScreen from '../screens/RelatorioScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import AuthNavigator from './AuthNavigator'; // Importar o AuthNavigator
+import LoginScreen from '../screens/LoginScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
+// TabNavigator (Main)
 const TabNavigator = () => {
   return (
-    <Tab.Navigator id={undefined}
+    <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
           let iconName;
@@ -40,6 +41,7 @@ const TabNavigator = () => {
         },
         tabBarActiveTintColor: 'tomato',
         tabBarInactiveTintColor: 'gray',
+        headerShown: false, // Oculta o cabeçalho nas telas do TabNavigator
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -52,12 +54,21 @@ const TabNavigator = () => {
   );
 };
 
+// AppNavigator
 const AppNavigator = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator id={undefined}>
-        <Stack.Screen name="Auth" component={AuthNavigator} options={{ headerShown: false }} />
-        <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
+      <Stack.Navigator>
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }} // Oculta o cabeçalho na tela de Login
+        />
+        <Stack.Screen
+          name="Main"
+          component={TabNavigator}
+          options={{ headerShown: false }} // Oculta o cabeçalho na tela Main
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
