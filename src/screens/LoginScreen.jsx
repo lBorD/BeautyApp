@@ -42,7 +42,7 @@ const LoginScreen = ({ navigation }) => {
       return;
     }
 
-    fetch('https://263a-179-109-206-16.ngrok-free.app/auth/login', {
+    fetch('https://3ade-179-109-206-16.ngrok-free.app/auth/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -58,7 +58,7 @@ const LoginScreen = ({ navigation }) => {
           console.log(data);
           Alert.alert(
             'Login falhou',
-            data.message,
+            'E-mail ou senha incorretos.',
             [{
               text: 'Tentar novamente',
             }]
@@ -66,6 +66,7 @@ const LoginScreen = ({ navigation }) => {
         }
       })
       .catch(error => {
+        console.log(error, response);
         Alert.alert(
           'Erro',
           'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente mais tarde.',
