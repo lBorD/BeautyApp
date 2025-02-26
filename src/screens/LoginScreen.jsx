@@ -58,7 +58,7 @@ const LoginScreen = ({ navigation }) => {
           console.log(data);
           Alert.alert(
             'Login falhou',
-            'E-mail ou senha incorretos.',
+            data.message,
             [{
               text: 'Tentar novamente',
             }]
@@ -66,7 +66,6 @@ const LoginScreen = ({ navigation }) => {
         }
       })
       .catch(error => {
-        console.log(error, response);
         Alert.alert(
           'Erro',
           'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente mais tarde.',
