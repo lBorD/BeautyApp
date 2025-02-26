@@ -1,7 +1,13 @@
 {
   "expo": {
-    "name": "my-expo-app",
-    "slug": "my-expo-app",
-    "version": "1.0.0"
+    "name": "BeautyApp",
+    "slug": "BeautyApp",
+    "version": "1.0.0",
+    "extra": {
+      "eas": {
+        "projectId": "9259b45d-2149-4e34-9ec4-002af0d784ab"
+      }
+    },
+    "owner": "bordd"
   }
 }
