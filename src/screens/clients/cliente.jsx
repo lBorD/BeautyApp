@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, FlatList, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import Button from '../components/button';
+import Button from '../../components/button';
 
 const ClienteScreen = () => {
   const navigation = useNavigation();
@@ -33,7 +33,7 @@ const ClienteScreen = () => {
       />
       <Button style={styles.button}
         title="Cadastrar Cliente"
-        onPress={() => navigation.navigate('CadastrarCliente')}
+        onPress={() => navigation.navigate('registerCustomer')}
       />
 
     </View>

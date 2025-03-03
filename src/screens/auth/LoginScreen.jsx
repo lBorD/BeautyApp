@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, ImageBackground } from 'react-native';
 import validator from 'validator';
-import api from '../services/api';
+import api from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
 
 const LoginScreen = () => {
@@ -65,7 +65,7 @@ const LoginScreen = () => {
   };
 
   return (
-    <ImageBackground source={require('../assets/background.jpg')} style={styles.container}>
+    <ImageBackground source={require('../../assets/background.jpg')} style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Login</Text>
         <TextInput

@@ -29,7 +29,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',     // Centralização horizontal do conteúdo
     justifyContent: 'center', // Centralização vertical do conteúdo
     width: '80%',            // Largura do botão
-    marginVertical: 10,      // Margem vertical
+    marginVertical: 10,
+    alignSelf: 'center'     // Margem vertical
   },
   buttonText: {
     // Modifique estas propriedades para alterar o texto do botão
