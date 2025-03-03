@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, Button, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import Button from '../components/button';
 
 const ClienteScreen = () => {
   const navigation = useNavigation();
@@ -21,15 +22,20 @@ const ClienteScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Button
-        title="Cadastrar Cliente"
-        onPress={() => navigation.navigate('CadastrarCliente')}
-      />
       <FlatList
         data={clientes}
         renderItem={renderItem}
         keyExtractor={item => item.id}
       />
+      <Button style={styles.button}
+        title="Exibir Clientes"
+        onPress={() => navigation.goBack()}
+      />
+      <Button style={styles.button}
+        title="Cadastrar Cliente"
+        onPress={() => navigation.navigate('CadastrarCliente')}
+      />
+
     </View>
   );
 };
@@ -37,7 +43,9 @@ const ClienteScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    allignItems: 'flex',
+    padding: 16,
+    paddingTop: 50,
   },
   item: {
     backgroundColor: '#f9c2ff',
@@ -46,6 +54,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
+  },
+  button: {
+    alignSelf: 'center',
   },
 });
 
