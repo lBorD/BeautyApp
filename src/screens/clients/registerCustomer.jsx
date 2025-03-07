@@ -13,6 +13,7 @@ export default function RegisterClient() {
     lastName: '',
     email: '',
     phone: '',
+    birthDate: '',
     address: ''
   });
 
@@ -31,6 +32,7 @@ export default function RegisterClient() {
         lastName: formData.lastName,
         email: formData.email,
         phone: formData.phone,
+        birthDate: formData.birthDate,
         address: formData.address
       });
 
@@ -84,6 +86,13 @@ export default function RegisterClient() {
           dataDetectorTypes={'phoneNumber'}
           value={formData.phone}
           onChangeText={(value) => handleInputChange('phone', value)}
+        />
+
+        <TextInput
+          style={styles.input}
+          placeholder="Data de Nascimento"
+          value={formData.birthDate}
+          onChangeText={(value) => handleInputChange('birthDate', value)}
         />
 
         <TextInput
