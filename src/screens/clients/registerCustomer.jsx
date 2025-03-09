@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
@@ -37,9 +37,21 @@ export default function RegisterClient() {
       });
 
       if (response.data.success) {
-        console.log('Cliente registrado com sucesso!');
+        Alert.alert(
+          "Sucesso",
+          "Cliente cadastrado com sucesso!",
+          [
+            { text: "OK", onPress: () => navigation.goBack() }
+          ]
+        );
       } else {
-        console.error('Não foi possivel registrar o cliente:', response.data.message);
+        Alert.alert(
+          "Erro",
+          "Não foi possivel cadastrar o cliente!",
+          [
+            { text: "OK" }
+          ]
+        );
       }
     } catch (error) {
       if (error.response) {
@@ -49,7 +61,6 @@ export default function RegisterClient() {
       }
     };
   };
-
   return (
     <ScrollView style={styles.container}>
       <View style={styles.formContainer}>
