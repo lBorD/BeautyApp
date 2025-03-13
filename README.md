@@ -64,11 +64,32 @@ Para utilizar o BeautyApp quando disponível:
 
 ## 📲 Como Utilizar  
 
-1. **Crie sua conta** e configure seu perfil com suas especialidades e serviços.  
-2. **Cadastre seus clientes** e acompanhe o histórico de atendimentos.  
-3. **Organize sua agenda** com o **Agendamento Inteligente**.  
-4. **Gerencie suas finanças** e tenha controle total sobre seus ganhos e despesas.  
-5. **Acompanhe relatórios e insights** para otimizar seu negócio.  
+Para rodar o projeto localmente, siga os passos abaixo:  
+
+### **1. Configurar a API**  
+O **BeautyApp** depende da API-BeautyApp para funcionar corretamente. Certifique-se de que a API esteja rodando antes de iniciar o aplicativo.  
+
+### **2. Baixar e Configurar o Projeto**  
+1. Clone o repositório do BeautyApp.  
+2. Acesse a pasta do projeto e instale as dependências:  
+   ```sh
+   npm install
+   ```
+3. Abra o arquivo `src/services/api.js` e defina o endereço da API no campo `"BaseURL"`.  
+
+### **3. Executar o Projeto**  
+- Para rodar o app no modo padrão:  
+  ```sh
+  npm start
+  ```
+- Para rodar criando um túnel e acessar em rede externa (ideal para testes em dispositivos reais):  
+  ```sh
+  npm run tunnel
+  ```
+
+Após isso, utilize o **Expo Go** para escanear o QR Code e executar o aplicativo no dispositivo.  
+
+Caso precise de suporte, consulte a documentação ou entre em contato. 🚀
 
 ---
 
