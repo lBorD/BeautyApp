@@ -4,13 +4,14 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import HomeScreen from '../screens/HomeScreen';
-import ClientesScreen from '../screens/ClienteScreen';
-import FinancasScreen from '../screens/FinancaScreen';
-import AgendaScreen from '../screens/AgendaScreen';
-import RelatorioScreen from '../screens/RelatorioScreen';
-import SettingsScreen from '../screens/SettingsScreen';
-import LoginScreen from '../screens/LoginScreen';
+import HomeScreen from '../screens/home/HomeScreen';
+import ClientesScreen from '../screens/clients/cliente';
+import FinancasScreen from '../screens/finance/FinancaScreen';
+import AgendaScreen from '../screens/calendar/AgendaScreen';
+import RelatorioScreen from '../screens/report/RelatorioScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
+import registerCustomer from '../screens/clients/registerCustomer';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -59,15 +60,20 @@ const AppNavigator = () => {
   return (
     <NavigationContainer>
       <Stack.Navigator>
-        <Stack.Screen
+        {/* <Stack.Screen
           name="Login"
           component={LoginScreen}
-          options={{ headerShown: false }} // Oculta o cabeçalho na tela de Login
-        />
+          options={{ headerShown: false }}
+        /> */}
         <Stack.Screen
           name="Main"
           component={TabNavigator}
-          options={{ headerShown: false }} // Oculta o cabeçalho na tela Main
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="registerCustomer"
+          component={registerCustomer}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>
