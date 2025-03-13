@@ -1,6 +1,6 @@
 ---
 
-# 💄 BeautyApp – Gestão Inteligente para Empreendedores da Beleza  
+# 💄 BeautyApp – Gestão Inteligente para Empreendedores da Beleza - EM DESENVOLVIMENTO
 
 O **BeautyApp** foi criado para apoiar **empreendedores da área da beleza**, oferecendo ferramentas para **gestão eficiente, organização financeira e crescimento profissional**.  
 
