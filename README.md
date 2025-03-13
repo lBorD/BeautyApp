@@ -1,5 +1,3 @@
-Aqui está o **README** completo e atualizado do **BeautyApp**, refletindo as tecnologias utilizadas, objetivos do projeto e informações sobre instalação e contato.  
-
 ---
 
 # 💄 BeautyApp – Gestão Inteligente para Empreendedores da Beleza  
