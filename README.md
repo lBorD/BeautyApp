@@ -12,7 +12,7 @@ No mercado, há poucas opções de aplicativos voltados para **pequenos negócio
 
 - [Objetivo do BeautyApp](#-objetivo-do-beautyapp)  
 - [Tecnologias Utilizadas](#-tecnologias-utilizadas)  
-- [Pré-requisitos](#-pré-requisitos)  
+- [Pré-requisitos](#%EF%B8%8F-pré-requisitos)  
   * [Requisitos de Sistema](#requisitos-de-sistema)  
   * [Cadastro e Acesso](#cadastro-e-acesso)  
 - [Como Utilizar](#-como-utilizar)  
