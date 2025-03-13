@@ -29,13 +29,13 @@ No mercado, há poucas opções de aplicativos voltados para **pequenos negócio
 
 ---
 
-## 🎯 Objetivo do BeautyApp  
+### 🎯 Objetivo do BeautyApp  
 
 O **BeautyApp** tem como missão **empoderar empreendedores da área da beleza** com uma plataforma intuitiva e completa, que facilita a **organização e gestão do negócio**. Com o aplicativo, o profissional pode **agendar atendimentos, controlar suas finanças, gerenciar clientes e produtos, além de acessar insights estratégicos** para aumentar seus lucros e otimizar seu tempo.  
 
 ---
 
-## 🛠 Tecnologias Utilizadas  
+### 🛠 Tecnologias Utilizadas  
 
 O **BeautyApp** foi desenvolvido utilizando tecnologias modernas para garantir uma experiência fluida e eficiente:  
 
@@ -46,7 +46,7 @@ O **BeautyApp** foi desenvolvido utilizando tecnologias modernas para garantir u
 
 ---
 
-## ⚙️ Pré-requisitos  
+### ⚙️ Pré-requisitos  
 
 ### **Requisitos de Sistema**  
 
@@ -62,7 +62,7 @@ Para utilizar o BeautyApp quando disponível:
 
 ---
 
-## 📲 Como Utilizar  
+### 📲 Como Utilizar  
 
 Para rodar o projeto localmente, siga os passos abaixo:  
 
@@ -93,7 +93,7 @@ Caso precise de suporte, consulte a documentação ou entre em contato. 🚀
 
 ---
 
-## 🚀 Funcionalidades  
+### 🚀 Funcionalidades  
 
 ### 📅 **Agendamento Inteligente**  
 - Sistema de agenda integrado, com alertas automáticos.  
@@ -121,7 +121,7 @@ Caso precise de suporte, consulte a documentação ou entre em contato. 🚀
 
 ---
 
-## 🔮 Futuras Atualizações  
+### 🔮 Futuras Atualizações  
 
 O BeautyApp está em constante evolução! Algumas funcionalidades que serão implementadas em breve incluem:  
 ✅ **APP disponivel na APP Store e Play Store** para testes antes da versão final.  
@@ -130,7 +130,7 @@ O BeautyApp está em constante evolução! Algumas funcionalidades que serão im
 
 ---
 
-## 📜 Licença e Comercialização  
+### 📜 Licença e Comercialização  
 
 O **BeautyApp** é um projeto **privado**, desenvolvido como parte do portfólio pessoal de seu criador Gabriel Ribeiro e com potencial para comercialização futura.  
 
@@ -138,7 +138,7 @@ O código-fonte **não está disponível para contribuições externas** e o apl
 
 ---
 
-## 📞 Contato  
+### 📞 Contato  
 
 Caso tenha interesse no **BeautyApp**, entre em contato:  
 
