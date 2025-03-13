@@ -10,22 +10,23 @@ No mercado, há poucas opções de aplicativos voltados para **pequenos negócio
 
 ## 📌 Sumário  
 
-- [Objetivo do BeautyApp](#objetivo-do-beautyapp)  
-- [Tecnologias Utilizadas](#tecnologias-utilizadas)  
-- [Pré-requisitos](#pré-requisitos)  
+- [Objetivo do BeautyApp](#-objetivo-do-beautyapp)  
+- [Tecnologias Utilizadas](#-tecnologias-utilizadas)  
+- [Pré-requisitos](#-pré-requisitos)  
   * [Requisitos de Sistema](#requisitos-de-sistema)  
   * [Cadastro e Acesso](#cadastro-e-acesso)  
-- [Como utilizar](#como-utilizar)  
-- [Funcionalidades](#funcionalidades)  
-  * [Agendamento Inteligente](#agendamento-inteligente)  
-  * [Gestão Financeira](#gestão-financeira)  
-  * [Cadastro de Clientes](#cadastro-de-clientes)  
-  * [Gestão de Produtos e Estoque](#gestão-de-produtos-e-estoque)  
-  * [Relatórios e Insights](#relatórios-e-insights)  
-  * [Consultoria com Especialistas](#consultoria-com-especialistas)  
-- [Futuras Atualizações](#futuras-atualizações)  
-- [Licença e Comercialização](#licença-e-comercialização)  
-- [Contato](#contato)  
+- [Como Utilizar](#-como-utilizar)  
+- [Funcionalidades](#-funcionalidades)  
+  * [Agendamento Inteligente](#-agendamento-inteligente)  
+  * [Gestão Financeira](#-gestão-financeira)  
+  * [Cadastro de Clientes](#-cadastro-de-clientes)  
+  * [Gestão de Produtos e Estoque](#-gestão-de-produtos-e-estoque)  
+  * [Relatórios e Insights](#-relatórios-e-insights)  
+  * [Consultoria com Especialistas](#-consultoria-com-especialistas)  
+- [Futuras Atualizações](#-futuras-atualizações)  
+- [Licença e Comercialização](#-licença-e-comercialização)  
+- [Contato](#-contato)  
+
 
 ---
 
