@@ -1,41 +1,90 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useNavigation } from '@react-navigation/native';
+import { getClients } from '../../services/private/listClient';
 import Button from '../../components/button';
+import { differenceInYears, parseISO } from 'date-fns';
 
-const ClienteScreen = () => {
+const ClientScreen = () => {
   const navigation = useNavigation();
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
 
-  const clientes = [
-    { id: '1', nome: 'Cliente 1', idade: 25, ticketMedio: 100 },
-    { id: '2', nome: 'Cliente 2', idade: 30, ticketMedio: 150 },
-    { id: '3', nome: 'Cliente 3', idade: 22, ticketMedio: 200 },
-  ];
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected);
+    });
 
-  const renderItem = ({ item }) => (
+    fetchClients();
+
+    return () => unsubscribe();
+  }, []);
+
+  const fetchClients = async () => {
+    if (!isConnected) {
+      Alert.alert('Sem Conexão', 'Você está offline. Conecte-se à internet para atualizar os clientes.');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      setRefreshing(true);
+      console.log("🔄 Buscando clientes da API...");
+
+      const clientList = await getClients();
+      console.log("✅ Clientes recebidos:", clientList);
+
+      setClients(clientList);
+    } catch (error) {
+      console.error("❌ Erro ao buscar clientes:", error);
+      Alert.alert('Erro', 'Não foi possível carregar os clientes.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const calculateAge = (birthDate) => {
+    if (!birthDate) return "Not provided";
+    const birth = parseISO(birthDate);
+    const today = new Date();
+    let age = differenceInYears(today, birth);
+    return `${age} years`;
+  };
+
+  const renderClientItem = ({ item }) => (
     <View style={styles.item}>
-      <Text style={styles.title}>Nome: {item.nome}</Text>
-      <Text>Idade: {item.idade}</Text>
-      <Text>Ticket Médio: {item.ticketMedio}</Text>
+      <Text style={styles.title}>ID: {item.id}</Text>
+      <Text>Name: {item.name} {item.lastName}</Text>
+      <Text>Phone: {item.phone}</Text>
+      <Text>Email: {item.email}</Text>
+      <Text>Age: {calculateAge(item.birthDate)}</Text>
     </View>
   );
 
+  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#0000ff" />;
+
   return (
     <View style={styles.container}>
+      {!isConnected && <Text style={styles.offlineText}>You are offline</Text>}
+
       <FlatList
-        data={clientes}
-        renderItem={renderItem}
-        keyExtractor={item => item.id}
-      />
-      <Button style={styles.button}
-        title="Exibir Clientes"
-        onPress={() => navigation.goBack()}
-      />
-      <Button style={styles.button}
-        title="Cadastrar Cliente"
-        onPress={() => navigation.navigate('registerCustomer')}
+        data={clients}
+        renderItem={renderClientItem}
+        keyExtractor={item => item.id.toString()}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={fetchClients} />
+        }
       />
 
+      <Button style={styles.button}
+        title="Register Client"
+        onPress={() => navigation.navigate('registerCustomer')}
+      />
     </View>
   );
 };
@@ -43,21 +92,29 @@ const ClienteScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    allignItems: 'flex',
     padding: 16,
     paddingTop: 50,
+  },
+  offlineText: {
+    textAlign: 'center',
+    color: 'red',
+    marginBottom: 10,
+    fontWeight: 'bold',
   },
   item: {
     backgroundColor: '#f9c2ff',
     padding: 20,
     marginVertical: 8,
+    borderRadius: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   button: {
     alignSelf: 'center',
+    marginVertical: 10,
   },
 });
 
-export default ClienteScreen;
+export default ClientScreen;
