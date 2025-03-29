@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://7d82-2804-f84-4-de14-2dc3-2f96-d2c8-c5ac.ngrok-free.app',
+  baseURL: 'https://api-h1hk.onrender.com',
   timeout: 5000,
   headers: {
     'Content-Type': 'application/json',

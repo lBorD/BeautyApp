@@ -1,8 +1,5 @@
-Aqui está o **README** completo e atualizado do **BeautyApp**, refletindo as tecnologias utilizadas, objetivos do projeto e informações sobre instalação e contato.  
 
----
-
-# 💄 BeautyApp – Gestão Inteligente para Empreendedores da Beleza  
+# 💄 BeautyApp – Gestão Inteligente para Empreendedores da Beleza - EM DESENVOLVIMENTO
 
 O **BeautyApp** foi criado para apoiar **empreendedores da área da beleza**, oferecendo ferramentas para **gestão eficiente, organização financeira e crescimento profissional**.  
 
@@ -12,32 +9,32 @@ No mercado, há poucas opções de aplicativos voltados para **pequenos negócio
 
 ## 📌 Sumário  
 
-- [Objetivo do BeautyApp](#objetivo-do-beautyapp)  
-- [Tecnologias Utilizadas](#tecnologias-utilizadas)  
-- [Pré-requisitos](#pré-requisitos)  
-  * [Requisitos de Sistema](#requisitos-de-sistema)  
-  * [Cadastro e Acesso](#cadastro-e-acesso)  
-- [Como utilizar](#como-utilizar)  
-- [Funcionalidades](#funcionalidades)  
-  * [Agendamento Inteligente](#agendamento-inteligente)  
-  * [Gestão Financeira](#gestão-financeira)  
-  * [Cadastro de Clientes](#cadastro-de-clientes)  
-  * [Gestão de Produtos e Estoque](#gestão-de-produtos-e-estoque)  
-  * [Relatórios e Insights](#relatórios-e-insights)  
-  * [Consultoria com Especialistas](#consultoria-com-especialistas)  
-- [Futuras Atualizações](#futuras-atualizações)  
-- [Licença e Comercialização](#licença-e-comercialização)  
-- [Contato](#contato)  
+- [🎯 Objetivo do BeautyApp](#-objetivo-do-beautyapp)  
+- [🛠️ Tecnologias Utilizadas](#-tecnologias-utilizadas)  
+- [⚙️ Pré-requisitos](#-pré-requisitos)  
+  * [📱 Requisitos de Sistema](#requisitos-de-sistema)  
+  * [📝 Cadastro e Acesso](#cadastro-e-acesso)  
+- [📲 Como Utilizar](#-como-utilizar)  
+- [🚀 Funcionalidades](#-funcionalidades)  
+  * [📅 Agendamento Inteligente](#-agendamento-inteligente)  
+  * [💰 Gestão Financeira](#-gestão-financeira)  
+  * [👩‍💼 Cadastro de Clientes](#-cadastro-de-clientes)  
+  * [📦 Gestão de Produtos e Estoque](#-gestão-de-produtos-e-estoque)  
+  * [📊 Relatórios e Insights](#-relatórios-e-insights)  
+  * [🎓 Consultoria com Especialistas](#-consultoria-com-especialistas)  
+- [🔮 Futuras Atualizações](#-futuras-atualizações)  
+- [📜 Licença e Comercialização](#-licença-e-comercialização)  
+- [📞 Contato](#-contato)
 
 ---
 
-## 🎯 Objetivo do BeautyApp  
+### 🎯 Objetivo do BeautyApp  
 
 O **BeautyApp** tem como missão **empoderar empreendedores da área da beleza** com uma plataforma intuitiva e completa, que facilita a **organização e gestão do negócio**. Com o aplicativo, o profissional pode **agendar atendimentos, controlar suas finanças, gerenciar clientes e produtos, além de acessar insights estratégicos** para aumentar seus lucros e otimizar seu tempo.  
 
 ---
 
-## 🛠 Tecnologias Utilizadas  
+### 🛠 Tecnologias Utilizadas  
 
 O **BeautyApp** foi desenvolvido utilizando tecnologias modernas para garantir uma experiência fluida e eficiente:  
 
@@ -48,7 +45,7 @@ O **BeautyApp** foi desenvolvido utilizando tecnologias modernas para garantir u
 
 ---
 
-## ⚙️ Pré-requisitos  
+### ⚙️ Pré-requisitos  
 
 ### **Requisitos de Sistema**  
 
@@ -64,17 +61,38 @@ Para utilizar o BeautyApp quando disponível:
 
 ---
 
-## 📲 Como Utilizar  
+### 📲 Como Utilizar  
 
-1. **Crie sua conta** e configure seu perfil com suas especialidades e serviços.  
-2. **Cadastre seus clientes** e acompanhe o histórico de atendimentos.  
-3. **Organize sua agenda** com o **Agendamento Inteligente**.  
-4. **Gerencie suas finanças** e tenha controle total sobre seus ganhos e despesas.  
-5. **Acompanhe relatórios e insights** para otimizar seu negócio.  
+Para rodar o projeto localmente, siga os passos abaixo:  
+
+### **1. Configurar a API**  
+O **BeautyApp** depende da API-BeautyApp para funcionar corretamente. Certifique-se de que a API esteja rodando antes de iniciar o aplicativo.  
+
+### **2. Baixar e Configurar o Projeto**  
+1. Clone o repositório do BeautyApp.  
+2. Acesse a pasta do projeto e instale as dependências:  
+   ```sh
+   npm install
+   ```
+3. Abra o arquivo `src/services/api.js` e defina o endereço da API no campo `"BaseURL"`.  
+
+### **3. Executar o Projeto**  
+- Para rodar o app no modo padrão:  
+  ```sh
+  npm start
+  ```
+- Para rodar criando um túnel e acessar em rede externa (ideal para testes em dispositivos reais):  
+  ```sh
+  npm run tunnel
+  ```
+
+Após isso, utilize o **Expo Go** para escanear o QR Code e executar o aplicativo no dispositivo.  
+
+Caso precise de suporte, consulte a documentação ou entre em contato. 🚀
 
 ---
 
-## 🚀 Funcionalidades  
+### 🚀 Funcionalidades  
 
 ### 📅 **Agendamento Inteligente**  
 - Sistema de agenda integrado, com alertas automáticos.  
@@ -102,7 +120,7 @@ Para utilizar o BeautyApp quando disponível:
 
 ---
 
-## 🔮 Futuras Atualizações  
+### 🔮 Futuras Atualizações  
 
 O BeautyApp está em constante evolução! Algumas funcionalidades que serão implementadas em breve incluem:  
 ✅ **APP disponivel na APP Store e Play Store** para testes antes da versão final.  
@@ -111,7 +129,7 @@ O BeautyApp está em constante evolução! Algumas funcionalidades que serão im
 
 ---
 
-## 📜 Licença e Comercialização  
+### 📜 Licença e Comercialização  
 
 O **BeautyApp** é um projeto **privado**, desenvolvido como parte do portfólio pessoal de seu criador Gabriel Ribeiro e com potencial para comercialização futura.  
 
@@ -119,7 +137,7 @@ O código-fonte **não está disponível para contribuições externas** e o apl
 
 ---
 
-## 📞 Contato  
+### 📞 Contato  
 
 Caso tenha interesse no **BeautyApp**, entre em contato:  
 
