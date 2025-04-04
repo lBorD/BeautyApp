@@ -1,48 +1,55 @@
-// filepath: src/navigation/AppNavigator.tsx
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
-import HomeScreen from '../screens/home/HomeScreen';
-import ClientesScreen from '../screens/clients/cliente';
-import FinancasScreen from '../screens/finance/FinancaScreen';
-import AgendaScreen from '../screens/calendar/AgendaScreen';
-import RelatorioScreen from '../screens/report/RelatorioScreen';
-import SettingsScreen from '../screens/settings/SettingsScreen';
-import LoginScreen from '../screens/auth/LoginScreen';
-import registerCustomer from '../screens/clients/registerCustomer';
+// AppNavigator.js
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createStackNavigator } from "@react-navigation/stack";
+import { Ionicons } from "@expo/vector-icons";
+
+import HomeScreen from "../screens/home/HomeScreen";
+import ClientesScreen from "../screens/clients/cliente";
+import FinancasScreen from "../screens/finance/FinancaScreen";
+import AgendaScreen from "../screens/calendar/AgendaScreen";
+import RelatorioScreen from "../screens/report/RelatorioScreen";
+import SettingsScreen from "../screens/settings/SettingsScreen";
+import LoginScreen from "../screens/auth/LoginScreen";
+import RegisterCustomerScreen from "../screens/clients/registerCustomer";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// TabNavigator (Main)
 const TabNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
-          let iconName;
+          let iconName = "home";
 
-          if (route.name === 'Home') {
-            iconName = 'home';
-          } else if (route.name === 'Clientes') {
-            iconName = 'people';
-          } else if (route.name === 'Finanças') {
-            iconName = 'cash';
-          } else if (route.name === 'Agenda') {
-            iconName = 'calendar';
-          } else if (route.name === 'Relatório') {
-            iconName = 'document';
-          } else if (route.name === 'Configurações') {
-            iconName = 'settings';
+          switch (route.name) {
+            case "Home":
+              iconName = "home";
+              break;
+            case "Clientes":
+              iconName = "people";
+              break;
+            case "Finanças":
+              iconName = "cash";
+              break;
+            case "Agenda":
+              iconName = "calendar";
+              break;
+            case "Relatório":
+              iconName = "document";
+              break;
+            case "Configurações":
+              iconName = "settings";
+              break;
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: 'tomato',
-        tabBarInactiveTintColor: 'gray',
-        headerShown: false, // Oculta o cabeçalho nas telas do TabNavigator
+        tabBarActiveTintColor: "tomato",
+        tabBarInactiveTintColor: "gray",
+        headerShown: false,
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
@@ -55,24 +62,19 @@ const TabNavigator = () => {
   );
 };
 
-// AppNavigator
 const AppNavigator = () => {
   return (
     <NavigationContainer>
       <Stack.Navigator>
-        {/* <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        /> */}
+        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen
           name="Main"
           component={TabNavigator}
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="registerCustomer"
-          component={registerCustomer}
+          name="RegisterCustomer"
+          component={RegisterCustomerScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

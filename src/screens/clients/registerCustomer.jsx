@@ -6,7 +6,7 @@ import Button from '../../components/button';
 import api from '../../services/api';
 
 
-export default function RegisterClient() {
+export default function RegisterClientScreeen() {
   const navigation = useNavigation();
   const [formData, setFormData] = useState({
     name: '',

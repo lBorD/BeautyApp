@@ -83,7 +83,8 @@ const ClientScreen = () => {
 
       <Button style={styles.button}
         title="Register Client"
-        onPress={() => navigation.navigate('registerCustomer')}
+        onPress={() => navigation.navigate('RegisterCustomer')}
+        icon="plus"
       />
     </View>
   );
