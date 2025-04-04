@@ -16,21 +16,14 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./src/assets/icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "com.bordd.beautyapp"
-    },
     "extra": {
       "eas": {
         "projectId": "7c60982a-a18b-40b0-a5f6-196f47884cb2"
       }
     },
-    "owner": "bordd"
+    "owner": "bordd",
+    "android": {
+      "package": "com.bordd.beautyapp"
+    }
   }
 }
