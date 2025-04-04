@@ -1,4 +1,4 @@
-package com.myexpoapp
+package com.bordd.beautyapp
 
 import android.os.Build
 import android.os.Bundle

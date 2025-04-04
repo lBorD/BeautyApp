@@ -1,9 +1,10 @@
 // filepath: src/screens/LoginScreen.jsx
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, Alert, ImageBackground } from 'react-native';
+import { View, TextInput, StyleSheet, Alert, Image } from 'react-native';
 import validator from 'validator';
 import api from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
+import Button from '../../components/button';
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -65,9 +66,13 @@ const LoginScreen = () => {
   };
 
   return (
-    <ImageBackground source={require('../../assets/background.jpg')} style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Login</Text>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <TextInput
           style={styles.input}
           placeholder="Email"
@@ -84,17 +89,17 @@ const LoginScreen = () => {
           secureTextEntry
         />
         <View style={styles.button}>
+          <Button title="Entrar" onPress={handleLogin} />
+        </View>
+
+        <View style={styles.button}>
           <Button
             title="Esqueci minha senha"
             onPress={() => navigation.navigate('ForgotPassword')}
           />
         </View>
-
-        <View style={styles.button}>
-          <Button title="Entrar" onPress={handleLogin} />
-        </View>
       </View>
-    </ImageBackground>
+    </View>
   );
 };
 
@@ -110,7 +115,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    height: 40,
+    height: 50,
     borderColor: '#ECACD1cf',
     borderWidth: 2,
     marginBottom: 12,
@@ -118,8 +123,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   button: {
-    marginTop: 10,
+    marginTop: -10,
     borderRadius: 8,
+  },
+  logo: {
+    width: 250,
+    height: 250,
+    alignSelf: 'center',
+    marginBottom: -50,
   },
 });
 

@@ -1,4 +1,4 @@
-package com.myexpoapp
+package com.bordd.beautyapp
 
 import android.app.Application
 import android.content.res.Configuration

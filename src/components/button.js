@@ -25,7 +25,7 @@ const styles = StyleSheet.create({
     // Modifique estas propriedades para alterar o formato e cor do botão
     backgroundColor: colors.secondary, // Cor de fundo do botão
     borderRadius: 8,           // Arredondamento das bordas
-    padding: 15,              // Espaçamento interno
+    padding: 10,              // Espaçamento interno
     alignItems: 'center',     // Centralização horizontal do conteúdo
     justifyContent: 'center', // Centralização vertical do conteúdo
     width: '80%',            // Largura do botão
