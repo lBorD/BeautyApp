@@ -1,18 +1,57 @@
 // filepath: src/screens/LoginScreen.jsx
-import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, Alert, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, TextInput, StyleSheet, Alert, Image, Text } from 'react-native';
 import validator from 'validator';
 import api from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
+import Toggle from '../../components/toggle';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberLogin, setRememberLogin] = useState(false);
   const navigation = useNavigation();
 
+  useEffect(() => {
+    const loadSavedCredentials = async () => {
+      try {
+        const savedRememberLogin = await AsyncStorage.getItem('rememberLogin');
+
+        if (savedRememberLogin === 'true') {
+          const savedEmail = await AsyncStorage.getItem('userEmail');
+          const savedPassword = await AsyncStorage.getItem('userPassword');
+
+          if (savedEmail) setEmail(savedEmail);
+          if (savedPassword) setPassword(savedPassword);
+          setRememberLogin(true);
+        }
+      } catch (error) {
+        console.log('Erro ao buscar o login salvo! ', error);
+      }
+    };
+
+    loadSavedCredentials();
+  }, []);
+
+  const saveCredentials = async () => {
+    try {
+      if (rememberLogin) {
+        await AsyncStorage.setItem('userEmail', email);
+        await AsyncStorage.setItem('userPassword', password);
+        await AsyncStorage.setItem('rememberLogin', 'true');
+      } else {
+        await AsyncStorage.removeItem('userEmail');
+        await AsyncStorage.removeItem('userPassword');
+        await AsyncStorage.setItem('rememberLogin', 'false');
+      }
+    } catch (error) {
+      console.log('Erro ao salvar as credenciais de login! ', error);
+    }
+  };
+
   const handleLogin = async () => {
-    // Validações de campo vazio e e-mail inválido
     if (!email) {
       Alert.alert(
         'Digite o e-mail, por favor!',
@@ -38,7 +77,8 @@ const LoginScreen = () => {
       return;
     }
 
-    // Lógica de autenticação
+    await saveCredentials();
+
     try {
       const response = await api.post('/auth/login', {
         email,
@@ -46,8 +86,7 @@ const LoginScreen = () => {
       });
 
       if (response.data.success) {
-        // Navega para a tela Main (TabNavigator) após o login bem-sucedido
-        navigation.navigate('Main');
+        navigation.replace('Main');
       } else {
         Alert.alert(
           'Login falhou',
@@ -64,7 +103,6 @@ const LoginScreen = () => {
       );
     }
   };
-
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -88,10 +126,15 @@ const LoginScreen = () => {
           onChangeText={setPassword}
           secureTextEntry
         />
+        <Toggle
+          label="Lembrar login"
+          value={rememberLogin}
+          onValueChange={setRememberLogin}
+          textPosition="right"
+        />
         <View style={styles.button}>
           <Button title="Entrar" onPress={handleLogin} />
         </View>
-
         <View style={styles.button}>
           <Button
             title="Esqueci minha senha"
@@ -131,6 +174,10 @@ const styles = StyleSheet.create({
     height: 250,
     alignSelf: 'center',
     marginBottom: -50,
+  },
+  rememberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });
 
