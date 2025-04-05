@@ -77,8 +77,6 @@ const LoginScreen = () => {
       return;
     }
 
-    await saveCredentials();
-
     try {
       const response = await api.post('/auth/login', {
         email,
@@ -86,6 +84,7 @@ const LoginScreen = () => {
       });
 
       if (response.data.success) {
+        await saveCredentials();
         navigation.replace('Main');
       } else {
         Alert.alert(
@@ -107,7 +106,7 @@ const LoginScreen = () => {
     <View style={styles.container}>
       <View style={styles.content}>
         <Image
-          source={require('../../assets/icon.png')}
+          source={require('../../assets/adaptative-icon.png')}
           style={styles.logo}
           resizeMode="contain"
         />

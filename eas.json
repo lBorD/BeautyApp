@@ -5,15 +5,26 @@
   },
   "build": {
     "development": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "ios": {
+        "simulator": true
+      },
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "preview": {
-      "distribution": "internal"
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "node": "18.20.6",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "channel": "production"
     },
     "apk": {
       "node": "18.20.6",

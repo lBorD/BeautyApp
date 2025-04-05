@@ -12,7 +12,10 @@
     "build": "eas build --platform all",
     "build:android": "eas build --platform android",
     "build:apk": "eas build --platform android --type apk",
-    "build:ios": "eas build --platform ios"
+    "build:ios": "eas build --platform ios",
+    "build:dev": "eas build --profile development --no-build-cache --platform android",
+    "update:dev": "eas update --branch development --message \"Update development\"",
+    "update:prod": "eas update --branch production --message \"Update production\""
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
@@ -34,7 +37,9 @@
     "react-native-safe-area-context": "4.12.0",
     "react-native-screens": "~4.4.0",
     "validator": "^13.12.0",
-    "react-native": "0.76.9"
+    "react-native": "0.76.9",
+    "expo-dev-client": "~5.0.19",
+    "expo-updates": "~0.27.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
