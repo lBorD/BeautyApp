@@ -14,9 +14,7 @@
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/7c60982a-a18b-40b0-a5f6-196f47884cb2"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "extra": {
       "eas": {
         "projectId": "7c60982a-a18b-40b0-a5f6-196f47884cb2"
@@ -28,10 +26,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
-      },
-      "runtimeVersion": {
-        "policy": "appVersion"
-      },
-      "ios": {}
-    }
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "ios": {}
   }
+}
