@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start --dev-client",
-    "android": "expo run:android",
+    "android": "npx expo start --clear --android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "tunnel": "expo start --tunnel",
