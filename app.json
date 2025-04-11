@@ -24,7 +24,7 @@
     "android": {
       "package": "com.bordd.beautyapp",
       "adaptiveIcon": {
-        "foregroundImage": "./src/assets/adaptive-icon.png",
+        "foregroundImage": "./src/assets/adaptative-icon.png",
         "backgroundColor": "#FFFFFF"
       }
     },

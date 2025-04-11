@@ -1,10 +1,9 @@
-
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
-
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
@@ -23,9 +22,31 @@ export default function RegisterClientScreeen() {
       [field]: value
     });
   };
+  const formatPhoneNumber = (text) => {
+    // Remover o prefixo '+55' se já existir, para não duplicar
+    let cleaned = text.replace(/\D/g, '').replace(/^55/, '');
+
+    let formatted = '+55 ';
+    if (cleaned.length > 0) {
+      if (cleaned.length <= 2) {
+        formatted += `(${cleaned}`;
+      } else if (cleaned.length <= 7) {
+        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2)}`;
+      } else if (cleaned.length <= 11) {
+        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
+      } else {
+        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
+      }
+    }
+    return formatted;
+  };
+
+  const handlePhoneChange = (text) => {
+    const formattedPhone = formatPhoneNumber(text);
+    handleInputChange('phone', formattedPhone);
+  };
 
   const handleRegister = async () => {
-    console.log('Form Data:', formData);
     try {
       const response = await api.post('/clients/register', {
         name: formData.name,
@@ -56,11 +77,14 @@ export default function RegisterClientScreeen() {
     } catch (error) {
       if (error.response) {
         console.error('Erro ao registrar cliente:', error.response.data.message);
+        Alert.alert("Erro", error.response.data.error || "Erro ao cadastrar cliente");
       } else {
         console.error('Erro ao registrar cliente:', error.message);
+        Alert.alert("Erro", "Falha na conexão com o servidor");
       }
     };
   };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.formContainer}>
@@ -68,22 +92,27 @@ export default function RegisterClientScreeen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Nome"
+          mode="outlined"
+          label="Nome"
           value={formData.name}
+          right={<TextInput.Affix />}
           onChangeText={(value) => handleInputChange('name', value)}
         />
 
         <TextInput
           style={styles.input}
+          mode="outlined"
+          right={<TextInput.Affix />}
           label="Sobrenome"
-          placeholder="Sobrenome"
           value={formData.lastName}
           onChangeText={(value) => handleInputChange('lastName', value)}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Email"
           keyboardType="email-address"
           textContentType='emailAddress'
           value={formData.email}
@@ -92,23 +121,31 @@ export default function RegisterClientScreeen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Telefone"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Telefone"
+          placeholder="+55"
           keyboardType="phone-pad"
-          dataDetectorTypes={'phoneNumber'}
           value={formData.phone}
-          onChangeText={(value) => handleInputChange('phone', value)}
+          onChangeText={handlePhoneChange}
+          theme={{ colors: { placeholder: 'red' } }}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Data de Nascimento"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Data de Nascimento"
+          placeholder="YYYY-MM-DD"
           value={formData.birthDate}
           onChangeText={(value) => handleInputChange('birthDate', value)}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Endereço"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Endereço"
           value={formData.address}
           onChangeText={(value) => handleInputChange('address', value)}
         />
@@ -143,10 +180,6 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 15,
     marginBottom: 15,
     fontSize: 16,
   },
@@ -157,14 +190,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 4,
   }
 });
