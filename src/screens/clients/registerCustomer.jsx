@@ -5,14 +5,13 @@ import { FontAwesome } from '@expo/vector-icons'; // Usando o FontAwesome do Exp
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
-import formatPhoneNumber from '../../utils/formatNumber';
 import formatBirthDay from '../../utils/formatBirthday';
-import validator from 'validator';
+import formatPhoneNumber from '../../utils/formatNumber';
 import validator from 'validator';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
-  const [isValidEmail, setIsValidEmail] = useState(true); // Estado de validade do e-mail
+  const [isValidEmail, setIsValidEmail] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
@@ -23,31 +22,13 @@ export default function RegisterClientScreeen() {
   });
 
   const handleInputChange = (field, value) => {
-    // Valida o e-mail sempre que o usuário digitar
     if (field === 'email') {
-      setIsValidEmail(validator.isEmail(value)); // Atualiza a validade do e-mail
+      setIsValidEmail(validator.isEmail(value));
     }
     setFormData({
       ...formData,
       [field]: value
     });
-  };
-  const formatPhoneNumber = (text) => {
-    let cleaned = text.replace(/\D/g, '').replace(/^55/, '');
-
-    let formatted = '+55 ';
-    if (cleaned.length > 0) {
-      if (cleaned.length <= 2) {
-        formatted += `(${cleaned}`;
-      } else if (cleaned.length <= 7) {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2)}`;
-      } else if (cleaned.length <= 11) {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-      } else {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
-      }
-    }
-    return formatted;
   };
 
   const handlePhoneChange = (text) => {
@@ -61,20 +42,20 @@ export default function RegisterClientScreeen() {
   };
 
   const handleRegister = async () => {
-
     const validations = [
       { condition: !formData.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
       { condition: !formData.name, message: "É necessário fornecer o nome para finalizar o registro." },
       { condition: !formData.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
       { condition: !formData.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
-      { condition: !formData.validator.isEmail(email), message: "E-mail inválido." },
-      { condition: !validator.isDate(birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
-      { condition: new Date(birthDate) > new Date(), message: "Data de nascimento não pode ser no futuro." }
+      { condition: !validator.isEmail(formData.email), message: "E-mail inválido." },
+      { condition: !validator.isDate(formData.birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
+      { condition: new Date(formData.birthDate.split('/').reverse().join('-')) > new Date(), message: "Data de nascimento não pode ser no futuro." }
     ];
 
     const error = validations.find(v => v.condition);
     if (error) {
-      return res.status(400).json({ error: error.message });
+      Alert.alert("Erro", error.message);
+      return;
     }
 
     try {
@@ -114,7 +95,6 @@ export default function RegisterClientScreeen() {
       }
     }
   };
-
   return (
     <ScrollView style={styles.container}>
       <View style={styles.formContainer}>
@@ -139,12 +119,7 @@ export default function RegisterClientScreeen() {
         />
 
         <TextInput
-          style={[
-            styles.input,
-            {
-              borderColor: isValidEmail ? 'gray' : 'red', // Muda a cor da borda se o e-mail for inválido
-            }
-          ]}
+          style={styles.input}
           mode="outlined"
           right={<TextInput.Affix text={
             isValidEmail ?
@@ -158,9 +133,6 @@ export default function RegisterClientScreeen() {
           value={formData.email}
           onChangeText={(value) => handleInputChange('email', value)}
         />
-        {/* {!isValidEmail && (
-          <Text style={styles.errorText}>E-mail inválido</Text> // Mensagem de erro dentro de <Text>
-        )} */}
 
         <TextInput
           style={styles.input}

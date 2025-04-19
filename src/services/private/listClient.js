@@ -14,8 +14,6 @@ export const getClients = async () => {
     const response = await api.get(`/clients/search/sync?lastSync=${encodeURIComponent(lastSync)}`);
     const remoteClients = response.data;
 
-    console.log("✅ Clientes recebidos da API:", remoteClients);
-
     // Recupera os clientes armazenados localmente
     const localClientsJSON = await AsyncStorage.getItem(STORAGE_KEY_CLIENTS);
     const localClients = localClientsJSON ? JSON.parse(localClientsJSON) : [];

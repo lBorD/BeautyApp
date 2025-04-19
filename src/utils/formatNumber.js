@@ -1,4 +1,4 @@
-export default formatPhoneNumber = (text) => {
+export default function formatPhoneNumber(text) {
   let cleaned = text.replace(/\D/g, '').replace(/^55/, '');
 
   let formatted = '+55 ';

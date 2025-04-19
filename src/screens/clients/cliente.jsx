@@ -36,7 +36,7 @@ const ClientScreen = () => {
       console.log("🔄 Buscando clientes da API...");
 
       const clientList = await getClients();
-      console.log("✅ Clientes recebidos:", clientList);
+      console.log("✅ Clientes recebidos");
 
       setClients(clientList);
     } catch (error) {
