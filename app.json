@@ -11,11 +11,10 @@
       "backgroundColor": "#ffffff"
     },
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/7c60982a-a18b-40b0-a5f6-196f47884cb2"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "extra": {
       "eas": {
         "projectId": "7c60982a-a18b-40b0-a5f6-196f47884cb2"
@@ -23,7 +22,15 @@
     },
     "owner": "bordd",
     "android": {
-      "package": "com.bordd.beautyapp"
-    }
+      "package": "com.bordd.beautyapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptative-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "ios": {}
   }
 }

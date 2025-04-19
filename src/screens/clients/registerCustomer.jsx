@@ -1,13 +1,17 @@
-
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { TextInput } from 'react-native-paper';
+import { FontAwesome } from '@expo/vector-icons'; // Usando o FontAwesome do Expo
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
-
+import formatBirthDay from '../../utils/formatBirthday';
+import formatPhoneNumber from '../../utils/formatNumber';
+import validator from 'validator';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
+  const [isValidEmail, setIsValidEmail] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
@@ -18,14 +22,42 @@ export default function RegisterClientScreeen() {
   });
 
   const handleInputChange = (field, value) => {
+    if (field === 'email') {
+      setIsValidEmail(validator.isEmail(value));
+    }
     setFormData({
       ...formData,
       [field]: value
     });
   };
 
+  const handlePhoneChange = (text) => {
+    const formattedPhone = formatPhoneNumber(text);
+    handleInputChange('phone', formattedPhone);
+  };
+
+  const handleDateChange = (text) => {
+    const formattedDate = formatBirthDay(text);
+    handleInputChange('birthDate', formattedDate);
+  };
+
   const handleRegister = async () => {
-    console.log('Form Data:', formData);
+    const validations = [
+      { condition: !formData.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
+      { condition: !formData.name, message: "É necessário fornecer o nome para finalizar o registro." },
+      { condition: !formData.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
+      { condition: !formData.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
+      { condition: !validator.isEmail(formData.email), message: "E-mail inválido." },
+      { condition: !validator.isDate(formData.birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
+      { condition: new Date(formData.birthDate.split('/').reverse().join('-')) > new Date(), message: "Data de nascimento não pode ser no futuro." }
+    ];
+
+    const error = validations.find(v => v.condition);
+    if (error) {
+      Alert.alert("Erro", error.message);
+      return;
+    }
+
     try {
       const response = await api.post('/clients/register', {
         name: formData.name,
@@ -47,7 +79,7 @@ export default function RegisterClientScreeen() {
       } else {
         Alert.alert(
           "Erro",
-          "Não foi possivel cadastrar o cliente!",
+          "Não foi possível cadastrar o cliente!",
           [
             { text: "OK" }
           ]
@@ -56,10 +88,12 @@ export default function RegisterClientScreeen() {
     } catch (error) {
       if (error.response) {
         console.error('Erro ao registrar cliente:', error.response.data.message);
+        Alert.alert("Erro", error.response.data.error || "Erro ao cadastrar cliente");
       } else {
         console.error('Erro ao registrar cliente:', error.message);
+        Alert.alert("Erro", "Falha na conexão com o servidor");
       }
-    };
+    }
   };
   return (
     <ScrollView style={styles.container}>
@@ -68,47 +102,64 @@ export default function RegisterClientScreeen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Nome"
+          mode="outlined"
+          label="Nome"
           value={formData.name}
+          right={<TextInput.Affix />}
           onChangeText={(value) => handleInputChange('name', value)}
         />
 
         <TextInput
           style={styles.input}
+          mode="outlined"
+          right={<TextInput.Affix />}
           label="Sobrenome"
-          placeholder="Sobrenome"
           value={formData.lastName}
           onChangeText={(value) => handleInputChange('lastName', value)}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          mode="outlined"
+          right={<TextInput.Affix text={
+            isValidEmail ?
+              <FontAwesome name="check-circle" size={20} color="green" /> :
+              <FontAwesome name="times-circle" size={20} color="red" />
+          }
+            accessibilityLabel={isValidEmail ? 'E-mail válido' : 'E-mail inválido'} />}
+          label="Email"
           keyboardType="email-address"
-          textContentType='emailAddress'
+          textContentType="emailAddress"
           value={formData.email}
           onChangeText={(value) => handleInputChange('email', value)}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Telefone"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Telefone"
+          placeholder="+55"
           keyboardType="phone-pad"
-          dataDetectorTypes={'phoneNumber'}
           value={formData.phone}
-          onChangeText={(value) => handleInputChange('phone', value)}
+          onChangeText={handlePhoneChange}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Data de Nascimento"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Data de Nascimento"
+          placeholder="YYYY-MM-DD"
           value={formData.birthDate}
-          onChangeText={(value) => handleInputChange('birthDate', value)}
+          onChangeText={handleDateChange}
         />
 
         <TextInput
           style={styles.input}
-          placeholder="Endereço"
+          mode="outlined"
+          right={<TextInput.Affix />}
+          label="Endereço"
           value={formData.address}
           onChangeText={(value) => handleInputChange('address', value)}
         />
@@ -143,10 +194,6 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 15,
     marginBottom: 15,
     fontSize: 16,
   },
@@ -158,13 +205,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 20,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 4,
+  errorText: {
+    color: 'red',
+    fontSize: 8,
+    marginBottom: 5
   }
 });
