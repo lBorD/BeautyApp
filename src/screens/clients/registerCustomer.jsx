@@ -4,6 +4,7 @@ import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
+import validator from 'validator';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
@@ -23,7 +24,6 @@ export default function RegisterClientScreeen() {
     });
   };
   const formatPhoneNumber = (text) => {
-    // Remover o prefixo '+55' se já existir, para não duplicar
     let cleaned = text.replace(/\D/g, '').replace(/^55/, '');
 
     let formatted = '+55 ';
@@ -47,6 +47,22 @@ export default function RegisterClientScreeen() {
   };
 
   const handleRegister = async () => {
+
+    const validations = [
+      { condition: !formData.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
+      { condition: !formData.name, message: "É necessário fornecer o nome para finalizar o registro." },
+      { condition: !formData.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
+      { condition: !formData.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
+      { condition: !formData.validator.isEmail(email), message: "E-mail inválido." },
+      { condition: !validator.isDate(birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
+      { condition: new Date(birthDate) > new Date(), message: "Data de nascimento não pode ser no futuro." }
+    ];
+
+    const error = validations.find(v => v.condition);
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
     try {
       const response = await api.post('/clients/register', {
         name: formData.name,
