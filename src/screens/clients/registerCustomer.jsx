@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { TextInput } from 'react-native-paper';
+import { FontAwesome } from '@expo/vector-icons'; // Usando o FontAwesome do Expo
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
+import formatPhoneNumber from '../../utils/formatNumber';
+import formatBirthDay from '../../utils/formatBirthday';
+import validator from 'validator';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
+  const [isValidEmail, setIsValidEmail] = useState(true); // Estado de validade do e-mail
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
@@ -17,33 +22,24 @@ export default function RegisterClientScreeen() {
   });
 
   const handleInputChange = (field, value) => {
+    // Valida o e-mail sempre que o usuário digitar
+    if (field === 'email') {
+      setIsValidEmail(validator.isEmail(value)); // Atualiza a validade do e-mail
+    }
     setFormData({
       ...formData,
       [field]: value
     });
   };
-  const formatPhoneNumber = (text) => {
-    // Remover o prefixo '+55' se já existir, para não duplicar
-    let cleaned = text.replace(/\D/g, '').replace(/^55/, '');
-
-    let formatted = '+55 ';
-    if (cleaned.length > 0) {
-      if (cleaned.length <= 2) {
-        formatted += `(${cleaned}`;
-      } else if (cleaned.length <= 7) {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2)}`;
-      } else if (cleaned.length <= 11) {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-      } else {
-        formatted += `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
-      }
-    }
-    return formatted;
-  };
 
   const handlePhoneChange = (text) => {
     const formattedPhone = formatPhoneNumber(text);
     handleInputChange('phone', formattedPhone);
+  };
+
+  const handleDateChange = (text) => {
+    const formattedDate = formatBirthDay(text);
+    handleInputChange('birthDate', formattedDate);
   };
 
   const handleRegister = async () => {
@@ -68,7 +64,7 @@ export default function RegisterClientScreeen() {
       } else {
         Alert.alert(
           "Erro",
-          "Não foi possivel cadastrar o cliente!",
+          "Não foi possível cadastrar o cliente!",
           [
             { text: "OK" }
           ]
@@ -82,7 +78,7 @@ export default function RegisterClientScreeen() {
         console.error('Erro ao registrar cliente:', error.message);
         Alert.alert("Erro", "Falha na conexão com o servidor");
       }
-    };
+    }
   };
 
   return (
@@ -109,15 +105,28 @@ export default function RegisterClientScreeen() {
         />
 
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: isValidEmail ? 'gray' : 'red', // Muda a cor da borda se o e-mail for inválido
+            }
+          ]}
           mode="outlined"
-          right={<TextInput.Affix />}
+          right={<TextInput.Affix text={
+            isValidEmail ?
+              <FontAwesome name="check-circle" size={20} color="green" /> :
+              <FontAwesome name="times-circle" size={20} color="red" />
+          }
+            accessibilityLabel={isValidEmail ? 'E-mail válido' : 'E-mail inválido'} />}
           label="Email"
           keyboardType="email-address"
-          textContentType='emailAddress'
+          textContentType="emailAddress"
           value={formData.email}
           onChangeText={(value) => handleInputChange('email', value)}
         />
+        {/* {!isValidEmail && (
+          <Text style={styles.errorText}>E-mail inválido</Text> // Mensagem de erro dentro de <Text>
+        )} */}
 
         <TextInput
           style={styles.input}
@@ -128,7 +137,6 @@ export default function RegisterClientScreeen() {
           keyboardType="phone-pad"
           value={formData.phone}
           onChangeText={handlePhoneChange}
-          theme={{ colors: { placeholder: 'red' } }}
         />
 
         <TextInput
@@ -138,7 +146,7 @@ export default function RegisterClientScreeen() {
           label="Data de Nascimento"
           placeholder="YYYY-MM-DD"
           value={formData.birthDate}
-          onChangeText={(value) => handleInputChange('birthDate', value)}
+          onChangeText={handleDateChange}
         />
 
         <TextInput
@@ -190,5 +198,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 8,
+    marginBottom: 5
   }
 });
