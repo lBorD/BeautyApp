@@ -39,7 +39,7 @@ O **BeautyApp** foi desenvolvido utilizando tecnologias modernas para garantir u
 
 - **Frontend:** React Native + Expo
 - **Backend:** Node.js
-- **Banco de Dados:** MySQL
+- **Banco de Dados:** PostgreSQL
 - **Inteligência Artificial:** OpenAI API / Machine Learning para recomendações personalizadas
 
 ---
