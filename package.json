@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start --clear",
+    "start": "expo start --clear --dev-client=false",
     "android": "npx expo start --clear --android",
     "ios": "expo run:ios",
     "web": "expo start --web",
