@@ -4,11 +4,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start --clear --dev-client=false",
+    "start": "npx expo start --clear --go",
     "android": "npx expo start --clear --android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "tunnel": "expo start --tunnel",
+    "tunnel": "expo start --clear --go --tunnel",
     "build": "eas build --platform all",
     "build:android": "eas build --platform android",
     "build:apk": "eas build --platform android --type apk",
@@ -20,6 +20,7 @@
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/datetimepicker": "^8.3.0",
     "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.19",
