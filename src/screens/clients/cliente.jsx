@@ -3,12 +3,13 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshCont
 import DateTimePicker from '@react-native-community/datetimepicker';
 import NetInfo from '@react-native-community/netinfo';
 import { useNavigation } from '@react-navigation/native';
-import { getClients } from '../../services/private/listClient';
+import { getClients, removeClientLocally } from '../../services/private/listClient';
 import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
 import { formatDate } from '../../utils/formatBirthday';
+import validator from 'validator';
 
 const ClientScreen = () => {
   const navigation = useNavigation();
@@ -18,6 +19,8 @@ const ClientScreen = () => {
   const [isConnected, setIsConnected] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredClients, setFilteredClients] = useState([]);
   const [editedClient, setEditedClient] = useState({
     name: '',
     lastName: '',
@@ -29,23 +32,25 @@ const ClientScreen = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected);
-    });
-
     fetchClients();
-
-    return () => unsubscribe();
   }, []);
-
-  const fetchClients = async () => {
-    if (!isConnected) {
-      Alert.alert('Sem Conexão', 'Você está offline. Conecte-se à internet para atualizar os clientes.');
-      setLoading(false);
-      setRefreshing(false);
-      return;
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredClients(clients);
+    } else {
+      const query = searchQuery.toLowerCase();
+      const filtered = clients.filter(client =>
+      (client.name?.toLowerCase().includes(query) ||
+        client.lastName?.toLowerCase().includes(query) ||
+        client.phone?.includes(query) ||
+        client.email?.toLowerCase().includes(query))
+      );
+      setFilteredClients(filtered);
     }
 
+  }, [searchQuery, clients]);
+
+  const fetchClients = async () => {
     try {
       setRefreshing(true);
       console.log("🔄 Buscando clientes da API...");
@@ -77,36 +82,76 @@ const ClientScreen = () => {
   };
 
   const handleSaveChanges = async () => {
-    if (!isConnected) {
-      Alert.alert('Sem Conexão', 'Você está offline. Conecte-se à internet para salvar as alterações.');
-      return;
-    }
-
     try {
-      const updatedClients = clients.map(client =>
-        client.id === selectedClient.id ? { ...client, ...editedClient } : client
-      );
 
       const clientToUpdate = {
-        ...updatedClients[0],
-        birthDate: formatDate(updatedClients[0].birthDate)
+        ...editedClient,
+        birthDate: formatDate(editedClient.birthDate)
       };
 
-      console.log('ATUALIZANDO CLIENTE:');
-      const response = await api.patch(`/clients/update/${selectedClient.id}`, clientToUpdate);
-      console.log(response.data);
+      const validations = [
+        { condition: !clientToUpdate.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
+        { condition: !clientToUpdate.name, message: "É necessário fornecer o nome para finalizar o registro." },
+        { condition: !clientToUpdate.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
+        { condition: !clientToUpdate.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
+        { condition: !validator.isEmail(clientToUpdate.email), message: "E-mail inválido." },
+        { condition: !validator.isDate(clientToUpdate.birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
+        // { condition: new Date(editedClient.birthDate.split('/').reverse().join('-')) > new Date(), message: "Data de nascimento não pode ser no futuro." }
+      ];
 
-      setClients(updatedClients);
-      setModalVisible(false);
+      const error = validations.find(v => v.condition);
+      if (error) {
+        Alert.alert("Erro", error.message);
+        return;
+      }
+
+      console.log("🔄 Atualizando cliente na API...");
+      const response = await api.patch(`/clients/update/${selectedClient.id}`, clientToUpdate);
+
       if (response.status === 200) {
+        const updatedClients = clients.map(client =>
+          client.id === selectedClient.id ? { ...client, ...editedClient } : client
+        );
+
+        setClients(updatedClients);
         Alert.alert('Sucesso', 'Cliente atualizado com sucesso!');
+        setModalVisible(false);
       } else {
         Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
       }
     } catch (error) {
-      console.error("❌ Erro ao atualizar cliente:", response.data);
+      console.error("❌ Erro ao atualizar cliente:", error.response?.data || error.message);
       Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
     }
+  };
+
+  const handleDeleteClient = (client) => {
+    Alert.alert(
+      'Confirmar Exclusão',
+      `Deseja realmente excluir o cliente ${client.name} ${client.lastName || ''}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/clients/delete/${client.id}`);
+              await removeClientLocally(client.id);
+              fetchClients();
+
+              const updatedClients = clients.filter(c => c.id !== client.id);
+              setClients(updatedClients);
+
+              Alert.alert('Sucesso', 'Cliente excluído com sucesso!');
+            } catch (error) {
+              console.error("❌ Erro ao excluir cliente:", error);
+              Alert.alert('Erro', 'Não foi possível excluir o cliente.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleDateChange = (event, selectedDate) => {
@@ -136,10 +181,23 @@ const ClientScreen = () => {
 
   return (
     <View style={styles.container}>
-      {!isConnected && <Text style={styles.offlineText}>You are offline</Text>}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color={colors.text} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar cliente..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={20} color={colors.text} />
+          </TouchableOpacity>
+        )}
+      </View>
 
       <FlatList
-        data={clients}
+        data={filteredClients}
         renderItem={renderClientItem}
         keyExtractor={item => item.id.toString()}
         refreshControl={
@@ -162,8 +220,20 @@ const ClientScreen = () => {
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <ScrollView>
-              <Text style={styles.modalTitle}>Editar Cliente</Text>
-
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Editar Cliente</Text>
+                <TouchableOpacity
+                  style={styles.deleteIconButton}
+                  onPress={() => {
+                    setModalVisible(false);
+                    setTimeout(() => {
+                      handleDeleteClient(selectedClient);
+                    }, 300);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={24} color={colors.danger} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.inputLabel}>Nome</Text>
               <TextInput
                 style={styles.input}
@@ -299,11 +369,15 @@ const styles = StyleSheet.create({
     width: '100%',
     maxHeight: '80%',
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
     color: colors.primary,
   },
   inputLabel: {
@@ -348,7 +422,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.shadow,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.secondary,
+  },
+  deleteIconButton: {
+    padding: 5,
   },
   buttonText: {
     color: colors.white,

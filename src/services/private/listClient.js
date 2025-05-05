@@ -6,7 +6,6 @@ const STORAGE_KEY_LAST_SYNC = 'lastSyncClients';
 
 export const getClients = async () => {
   try {
-    // Recupera o lastSync do AsyncStorage
     const lastSync = await AsyncStorage.getItem(STORAGE_KEY_LAST_SYNC) || '2000-01-01T00:00:00.000Z';
 
     console.log(`📡 Fazendo requisição para API com lastSync=${lastSync}...`);
@@ -29,6 +28,29 @@ export const getClients = async () => {
 
   } catch (error) {
     console.error("❌ Erro na requisição da API:", error.response ? error.response.data : error.message);
+    throw error;
+  }
+};
+
+export const removeClientLocally = async (clientId) => {
+  try {
+    // Recupera os clientes armazenados localmente
+    const localClientsJSON = await AsyncStorage.getItem(STORAGE_KEY_CLIENTS);
+    if (!localClientsJSON) return;
+
+    const localClients = JSON.parse(localClientsJSON);
+
+    // Remove o cliente da lista local
+    const updatedClients = localClients.filter(client => client.id !== clientId);
+
+    // Atualiza o AsyncStorage
+    await AsyncStorage.setItem(STORAGE_KEY_CLIENTS, JSON.stringify(updatedClients));
+
+    console.log(`🗑️ Cliente ID ${clientId} removido do armazenamento local`);
+
+    return updatedClients;
+  } catch (error) {
+    console.error("❌ Erro ao remover cliente localmente:", error);
     throw error;
   }
 };

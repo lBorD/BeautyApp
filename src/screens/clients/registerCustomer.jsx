@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { TextInput } from 'react-native-paper';
-import { FontAwesome } from '@expo/vector-icons'; // Usando o FontAwesome do Expo
+import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
