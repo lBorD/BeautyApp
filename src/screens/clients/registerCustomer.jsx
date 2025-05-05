@@ -5,7 +5,7 @@ import { FontAwesome } from '@expo/vector-icons'; // Usando o FontAwesome do Exp
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
-import formatBirthDay from '../../utils/formatBirthday';
+import { formatBirthDay } from '../../utils/formatBirthday';
 import formatPhoneNumber from '../../utils/formatNumber';
 import validator from 'validator';
 

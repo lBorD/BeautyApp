@@ -7,6 +7,8 @@ import { getClients } from '../../services/private/listClient';
 import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
+import api from '../../services/api';
+import { formatDate } from '../../utils/formatBirthday';
 
 const ClientScreen = () => {
   const navigation = useNavigation();
@@ -25,7 +27,6 @@ const ClientScreen = () => {
     address: ''
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
-
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
@@ -82,19 +83,28 @@ const ClientScreen = () => {
     }
 
     try {
-      // Here you would call your API to update the client
-      // Example: await updateClient(selectedClient.id, editedClient);
-
-      // For now, let's just update the local state
       const updatedClients = clients.map(client =>
         client.id === selectedClient.id ? { ...client, ...editedClient } : client
       );
 
+      const clientToUpdate = {
+        ...updatedClients[0],
+        birthDate: formatDate(updatedClients[0].birthDate)
+      };
+
+      console.log('ATUALIZANDO CLIENTE:');
+      const response = await api.patch(`/clients/update/${selectedClient.id}`, clientToUpdate);
+      console.log(response.data);
+
       setClients(updatedClients);
       setModalVisible(false);
-      Alert.alert('Sucesso', 'Cliente atualizado com sucesso!');
+      if (response.status === 200) {
+        Alert.alert('Sucesso', 'Cliente atualizado com sucesso!');
+      } else {
+        Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
+      }
     } catch (error) {
-      console.error("❌ Erro ao atualizar cliente:", error);
+      console.error("❌ Erro ao atualizar cliente:", response.data);
       Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
     }
   };
@@ -106,11 +116,6 @@ const ClientScreen = () => {
     }
   };
 
-  const formatDate = (date) => {
-    if (!date) return '';
-    const d = new Date(date);
-    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-  };
   const renderClientItem = ({ item }) => (
     <View style={styles.item}>
       <View style={styles.clientInfo}>
@@ -148,7 +153,6 @@ const ClientScreen = () => {
         icon="plus"
       />
 
-      {/* Edit Client Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -281,13 +285,12 @@ const styles = StyleSheet.create({
   editButton: {
     padding: 8,
   },
-  // Modal styles
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    padding: 20,
+    padding: 18,
   },
   modalContent: {
     backgroundColor: colors.white,
