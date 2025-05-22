@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { TextInput } from 'react-native-paper';
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
 import api from '../../services/api';
-import { formatBirthDay } from '../../utils/formatBirthday';
 import formatPhoneNumber from '../../utils/formatNumber';
+import { validateFormData } from '../../utils/validations';
 import validator from 'validator';
+import { formatDate } from '../../utils/formatBirthday';
+import colors from '../../constants/colors';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
@@ -17,9 +20,11 @@ export default function RegisterClientScreeen() {
     lastName: '',
     email: '',
     phone: '',
-    birthDate: '',
+    birthDate: new Date(1990, 5, 1),
     address: ''
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
 
   const handleInputChange = (field, value) => {
     if (field === 'email') {
@@ -36,37 +41,26 @@ export default function RegisterClientScreeen() {
     handleInputChange('phone', formattedPhone);
   };
 
-  const handleDateChange = (text) => {
-    const formattedDate = formatBirthDay(text);
-    handleInputChange('birthDate', formattedDate);
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setFormData({ ...formData, birthDate: selectedDate });
+    }
   };
 
   const handleRegister = async () => {
-    const validations = [
-      { condition: !formData.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
-      { condition: !formData.name, message: "É necessário fornecer o nome para finalizar o registro." },
-      { condition: !formData.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
-      { condition: !formData.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
-      { condition: !validator.isEmail(formData.email), message: "E-mail inválido." },
-      { condition: !validator.isDate(formData.birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
-      { condition: new Date(formData.birthDate.split('/').reverse().join('-')) > new Date(), message: "Data de nascimento não pode ser no futuro." }
-    ];
-
-    const error = validations.find(v => v.condition);
-    if (error) {
-      Alert.alert("Erro", error.message);
+    const clientToRegister = {
+      ...formData,
+      birthDate: formatDate(formData.birthDate)
+    };
+    if (!validateFormData(clientToRegister)) {
       return;
     }
-
+    console.log('Dados do cliente a serem enviados:', clientToRegister);
     try {
-      const response = await api.post('/clients/register', {
-        name: formData.name,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        birthDate: formData.birthDate,
-        address: formData.address
-      });
+      const response = await api.post('/clients/register',
+        clientToRegister
+      );
 
       if (response.data.success) {
         Alert.alert(
@@ -145,15 +139,33 @@ export default function RegisterClientScreeen() {
           onChangeText={handlePhoneChange}
         />
 
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowDatePicker(true)}
+        >
         <TextInput
           style={styles.input}
-          mode="outlined"
-          right={<TextInput.Affix />}
-          label="Data de Nascimento"
-          placeholder="YYYY-MM-DD"
-          value={formData.birthDate}
-          onChangeText={handleDateChange}
+            mode="outlined"
+            label="Data de Nascimento"
+            editable={false}
+            value={formData.birthDate instanceof Date ? formatDate(formData.birthDate) : ""}
+            right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
+            pointerEvents="none"
         />
+        </TouchableOpacity>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={
+              formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
+                ? formData.birthDate
+                : new Date()
+            }
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+          />
+        )}
 
         <TextInput
           style={styles.input}
@@ -196,6 +208,20 @@ const styles = StyleSheet.create({
     height: 50,
     marginBottom: 15,
     fontSize: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 5,
+    color: colors.text,
+  },
+  datePickerButton: {
+    borderWidth: 1,
+    borderColor: colors.shadow,
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 15,
+    backgroundColor: colors.white,
   },
   button: {
     backgroundColor: '#FF69B4',
