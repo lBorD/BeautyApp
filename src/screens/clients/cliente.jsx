@@ -8,6 +8,7 @@ import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
+import { validations } from '../../utils/validations';
 import { formatDate } from '../../utils/formatBirthday';
 import validator from 'validator';
 
@@ -16,7 +17,6 @@ const ClientScreen = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,6 +211,7 @@ const ClientScreen = () => {
         icon="plus"
       />
 
+      {/* MODAL DE EDIÇÃO DE CLIENTE */}
       <Modal
         animationType="slide"
         transparent={true}
