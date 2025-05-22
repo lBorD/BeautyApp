@@ -1,5 +1,5 @@
-
-export default function formatBirthDay(value) {
+import { format } from 'date-fns';
+export function formatBirthDay(value) {
   if (!value) return '';
 
   // Remove all non-numeric characters
@@ -13,4 +13,9 @@ export default function formatBirthDay(value) {
   } else {
     return `${numbers.slice(0, 4)}-${numbers.slice(4, 6)}-${numbers.slice(6, 8)}`;
   }
+}
+
+export function formatDate(value) {
+  const formattedBirthdate = format(new Date(value), 'yyyy-MM-dd');
+  return formattedBirthdate;
 }
