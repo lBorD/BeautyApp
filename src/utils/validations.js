@@ -1,3 +1,6 @@
+import validator from 'validator';
+import { Alert } from 'react-native';
+
 export const validateFormData = (formData) => {
   const validations = [
     { condition: !formData.email, message: "É necessário fornecer o e-mail para finalizar o registro." },

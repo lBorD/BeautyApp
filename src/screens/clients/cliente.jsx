@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, TextInput, ScrollView } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import NetInfo from '@react-native-community/netinfo';
 import { useNavigation } from '@react-navigation/native';
 import { getClients, removeClientLocally } from '../../services/private/listClient';
 import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
-import { validations } from '../../utils/validations';
+import { validateFormData } from '../../utils/validations';
 import { formatDate } from '../../utils/formatBirthday';
-import validator from 'validator';
 
 const ClientScreen = () => {
   const navigation = useNavigation();
@@ -89,19 +87,7 @@ const ClientScreen = () => {
         birthDate: formatDate(editedClient.birthDate)
       };
 
-      const validations = [
-        { condition: !clientToUpdate.email, message: "É necessário fornecer o e-mail para finalizar o registro." },
-        { condition: !clientToUpdate.name, message: "É necessário fornecer o nome para finalizar o registro." },
-        { condition: !clientToUpdate.phone, message: "É necessário fornecer o número de telefone para finalizar o registro." },
-        { condition: !clientToUpdate.birthDate, message: "É necessário fornecer a data de nascimento para finalizar o registro." },
-        { condition: !validator.isEmail(clientToUpdate.email), message: "E-mail inválido." },
-        { condition: !validator.isDate(clientToUpdate.birthDate, { format: 'YYYY-MM-DD', strictMode: true }), message: "Data de nascimento inválida. Use o formato YYYY-MM-DD." },
-        // { condition: new Date(editedClient.birthDate.split('/').reverse().join('-')) > new Date(), message: "Data de nascimento não pode ser no futuro." }
-      ];
-
-      const error = validations.find(v => v.condition);
-      if (error) {
-        Alert.alert("Erro", error.message);
+      if (!validateFormData(clientToUpdate)) {
         return;
       }
 
@@ -117,7 +103,7 @@ const ClientScreen = () => {
         Alert.alert('Sucesso', 'Cliente atualizado com sucesso!');
         setModalVisible(false);
       } else {
-        Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
+        Alert.alert('Erro', 'Não foi possível atualizar o cliente. ', response.data.message);
       }
     } catch (error) {
       console.error("❌ Erro ao atualizar cliente:", error.response?.data || error.message);
