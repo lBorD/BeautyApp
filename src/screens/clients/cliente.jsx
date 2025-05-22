@@ -311,12 +311,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 50
   },
-  offlineText: {
-    textAlign: 'center',
-    color: 'red',
-    marginBottom: 10,
-    fontWeight: 'bold',
-  },
   item: {
     backgroundColor: colors.white,
     padding: 20,
