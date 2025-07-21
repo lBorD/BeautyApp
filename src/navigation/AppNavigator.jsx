@@ -13,6 +13,7 @@ import RelatorioScreen from "../screens/report/RelatorioScreen";
 import SettingsScreen from "../screens/settings/SettingsScreen";
 import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterCustomerScreen from "../screens/clients/registerCustomer";
+import ServiceRegisterScreen from "../screens/finance/ServiceRegisterScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -76,6 +77,11 @@ const AppNavigator = () => {
           name="RegisterCustomer"
           component={RegisterCustomerScreen}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ServiceRegister"
+          component={ServiceRegisterScreen}
+          options={{ headerShown: true, title: 'Cadastro de Serviço' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
