@@ -13,6 +13,9 @@ import RelatorioScreen from "../screens/report/RelatorioScreen";
 import SettingsScreen from "../screens/settings/SettingsScreen";
 import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterCustomerScreen from "../screens/clients/registerCustomer";
+import RegisterServiceScreen from "../screens/services/RegisterServiceScreen";
+import EditServiceScreen from "../screens/services/EditServiceScreen";
+import ServiceScreen from "../screens/services/ServiceScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -30,6 +33,9 @@ const TabNavigator = () => {
               break;
             case "Clientes":
               iconName = "people";
+              break;
+            case "Serviços":
+              iconName = "briefcase";
               break;
             case "Finanças":
               iconName = "cash";
@@ -54,6 +60,7 @@ const TabNavigator = () => {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Clientes" component={ClientesScreen} />
+      <Tab.Screen name="Serviços" component={ServiceScreen} />
       <Tab.Screen name="Finanças" component={FinancasScreen} />
       <Tab.Screen name="Agenda" component={AgendaScreen} />
       <Tab.Screen name="Relatório" component={RelatorioScreen} />
@@ -75,6 +82,16 @@ const AppNavigator = () => {
         <Stack.Screen
           name="RegisterCustomer"
           component={RegisterCustomerScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="RegisterService"
+          component={RegisterServiceScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EditService"
+          component={EditServiceScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>
