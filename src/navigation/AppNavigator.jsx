@@ -5,17 +5,15 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import { Ionicons } from "@expo/vector-icons";
 
-import HomeScreen from "../screens/home/HomeScreen";
 import ClientesScreen from "../screens/clients/cliente";
 import FinancasScreen from "../screens/finance/FinancaScreen";
 import AgendaScreen from "../screens/calendar/AgendaScreen";
-import RelatorioScreen from "../screens/report/RelatorioScreen";
-import SettingsScreen from "../screens/settings/SettingsScreen";
 import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterCustomerScreen from "../screens/clients/registerCustomer";
 import RegisterServiceScreen from "../screens/services/RegisterServiceScreen";
 import EditServiceScreen from "../screens/services/EditServiceScreen";
 import ServiceScreen from "../screens/services/ServiceScreen";
+import colors from "../constants/colors";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -23,13 +21,14 @@ const Stack = createStackNavigator();
 const TabNavigator = () => {
   return (
     <Tab.Navigator
+      initialRouteName="Agenda"
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
-          let iconName = "home";
+          let iconName = "ellipse";
 
           switch (route.name) {
-            case "Home":
-              iconName = "home";
+            case "Agenda":
+              iconName = "calendar";
               break;
             case "Clientes":
               iconName = "people";
@@ -37,34 +36,27 @@ const TabNavigator = () => {
             case "Serviços":
               iconName = "briefcase";
               break;
-            case "Finanças":
+            case "Financeiro":
               iconName = "cash";
-              break;
-            case "Agenda":
-              iconName = "calendar";
-              break;
-            case "Relatório":
-              iconName = "document";
-              break;
-            case "Configurações":
-              iconName = "settings";
               break;
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: "tomato",
-        tabBarInactiveTintColor: "gray",
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.darkGray,
+        tabBarStyle: {
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Agenda" component={AgendaScreen} />
       <Tab.Screen name="Clientes" component={ClientesScreen} />
       <Tab.Screen name="Serviços" component={ServiceScreen} />
-      <Tab.Screen name="Finanças" component={FinancasScreen} />
-      <Tab.Screen name="Agenda" component={AgendaScreen} />
-      <Tab.Screen name="Relatório" component={RelatorioScreen} />
-      <Tab.Screen name="Configurações" component={SettingsScreen} />
+      <Tab.Screen name="Financeiro" component={FinancasScreen} />
     </Tab.Navigator>
   );
 };

@@ -192,9 +192,8 @@ const ClientScreen = () => {
       />
 
       <Button style={styles.button}
-        title="Register Client"
+        title="Novo Cliente"
         onPress={() => navigation.navigate('RegisterCustomer')}
-        icon="plus"
       />
 
       {/* MODAL DE EDIÇÃO DE CLIENTE */}

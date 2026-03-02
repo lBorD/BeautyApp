@@ -137,7 +137,9 @@ const LoginScreen = () => {
         <View style={styles.button}>
           <Button
             title="Esqueci minha senha"
-            onPress={() => navigation.navigate('ForgotPassword')}
+            onPress={() =>
+              Alert.alert('Em breve', 'A recuperação de senha será disponibilizada em breve.')
+            }
           />
         </View>
       </View>
