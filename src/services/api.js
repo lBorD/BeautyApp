@@ -1,4 +1,5 @@
-import axios from 'axios';
+﻿import axios from 'axios';
+import { getAuthToken } from './authStorage';
 
 const api = axios.create({
   baseURL: 'https://api-h1hk.onrender.com',
@@ -10,4 +11,20 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use(
+  async (config) => {
+    const token = await getAuthToken();
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers.Authorization) {
+      delete config.headers.Authorization;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
 export default api;
+

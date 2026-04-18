@@ -1,12 +1,12 @@
-// filepath: src/screens/LoginScreen.jsx
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Alert, Image, Text } from 'react-native';
+﻿import React, { useState, useEffect } from 'react';
+import { View, TextInput, StyleSheet, Alert, Image } from 'react-native';
 import validator from 'validator';
-import api from '../../services/api';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../../services/api';
+import { setAuthToken } from '../../services/authStorage';
 import Button from '../../components/button';
 import Toggle from '../../components/toggle';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -28,7 +28,7 @@ const LoginScreen = () => {
           setRememberLogin(true);
         }
       } catch (error) {
-        console.log('Erro ao buscar o login salvo! ', error);
+        console.log('Erro ao buscar o login salvo:', error);
       }
     };
 
@@ -47,33 +47,23 @@ const LoginScreen = () => {
         await AsyncStorage.setItem('rememberLogin', 'false');
       }
     } catch (error) {
-      console.log('Erro ao salvar as credenciais de login! ', error);
+      console.log('Erro ao salvar credenciais:', error);
     }
   };
 
   const handleLogin = async () => {
     if (!email) {
-      Alert.alert(
-        'Digite o e-mail, por favor!',
-        'O campo de e-mail não pode ser vazio.',
-        [{ text: 'Perfeito' }]
-      );
+      Alert.alert('Digite o e-mail', 'O campo de e-mail não pode ficar vazio.');
       return;
-    } else if (!password) {
-      Alert.alert(
-        'Digite a senha, por favor!',
-        'O campo de senha não pode ser vazio.',
-        [{ text: 'Perfeito' }]
-      );
+    }
+
+    if (!password) {
+      Alert.alert('Digite a senha', 'O campo de senha não pode ficar vazio.');
       return;
     }
 
     if (!validator.isEmail(email)) {
-      Alert.alert(
-        'E-mail inválido',
-        'Por favor, insira um e-mail válido.',
-        [{ text: 'Perfeito' }]
-      );
+      Alert.alert('E-mail inválido', 'Por favor, insira um e-mail válido.');
       return;
     }
 
@@ -83,25 +73,20 @@ const LoginScreen = () => {
         password,
       });
 
-      if (response.data.success) {
+      if (response.data.success && response.data.token) {
         await saveCredentials();
+        await setAuthToken(response.data.token);
         navigation.replace('Main');
-      } else {
-        Alert.alert(
-          'Login falhou',
-          'E-mail ou senha incorretos.',
-          [{ text: 'Tentar novamente' }]
-        );
+        return;
       }
+
+      Alert.alert('Login falhou', 'E-mail ou senha incorretos.');
     } catch (error) {
       console.error('Erro ao fazer login:', error);
-      Alert.alert(
-        'Erro',
-        'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente mais tarde.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Erro', 'Não foi possível fazer login agora. Tente novamente.');
     }
   };
+
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -137,9 +122,7 @@ const LoginScreen = () => {
         <View style={styles.button}>
           <Button
             title="Esqueci minha senha"
-            onPress={() =>
-              Alert.alert('Em breve', 'A recuperação de senha será disponibilizada em breve.')
-            }
+            onPress={() => Alert.alert('Em breve', 'Recuperação de senha será adicionada em breve.')}
           />
         </View>
       </View>
@@ -152,11 +135,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    marginBottom: 16,
-    textAlign: 'center',
   },
   input: {
     height: 50,
@@ -176,10 +154,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: -50,
   },
-  rememberContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
 });
 
 export default LoginScreen;
+
