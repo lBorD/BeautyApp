@@ -1,4 +1,4 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+﻿# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
 node_modules/
@@ -77,5 +77,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Artificial intelligence
+.codex
 
 # @end expo-cli

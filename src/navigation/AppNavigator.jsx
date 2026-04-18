@@ -1,76 +1,102 @@
-// AppNavigator.js
-import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createStackNavigator } from "@react-navigation/stack";
-import { Ionicons } from "@expo/vector-icons";
+﻿import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
 
-import ClientesScreen from "../screens/clients/cliente";
-import FinancasScreen from "../screens/finance/FinancaScreen";
-import AgendaScreen from "../screens/calendar/AgendaScreen";
-import LoginScreen from "../screens/auth/LoginScreen";
-import RegisterCustomerScreen from "../screens/clients/registerCustomer";
-import RegisterServiceScreen from "../screens/services/RegisterServiceScreen";
-import EditServiceScreen from "../screens/services/EditServiceScreen";
-import ServiceScreen from "../screens/services/ServiceScreen";
-import colors from "../constants/colors";
+import ClientesScreen from '../screens/clients/cliente';
+import FinancasScreen from '../screens/finance/FinancaScreen';
+import AgendaScreen from '../screens/calendar/AgendaScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
+import RegisterCustomerScreen from '../screens/clients/registerCustomer';
+import RegisterServiceScreen from '../screens/services/RegisterServiceScreen';
+import EditServiceScreen from '../screens/services/EditServiceScreen';
+import ServiceScreen from '../screens/services/ServiceScreen';
+import colors from '../constants/colors';
+import { getAuthToken } from '../services/authStorage';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-const TabNavigator = () => {
-  return (
-    <Tab.Navigator
-      initialRouteName="Agenda"
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
-          let iconName = "ellipse";
+const TabNavigator = () => (
+  <Tab.Navigator
+    initialRouteName="Agenda"
+    screenOptions={({ route }) => ({
+      tabBarIcon: ({ color, size }) => {
+        let iconName = 'ellipse';
 
-          switch (route.name) {
-            case "Agenda":
-              iconName = "calendar";
-              break;
-            case "Clientes":
-              iconName = "people";
-              break;
-            case "Serviços":
-              iconName = "briefcase";
-              break;
-            case "Financeiro":
-              iconName = "cash";
-              break;
-          }
+        switch (route.name) {
+          case 'Agenda':
+            iconName = 'calendar';
+            break;
+          case 'Clientes':
+            iconName = 'people';
+            break;
+          case 'Serviços':
+            iconName = 'briefcase';
+            break;
+          case 'Financeiro':
+            iconName = 'cash';
+            break;
+          default:
+            iconName = 'ellipse';
+        }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.darkGray,
-        tabBarStyle: {
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
-        },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Agenda" component={AgendaScreen} />
-      <Tab.Screen name="Clientes" component={ClientesScreen} />
-      <Tab.Screen name="Serviços" component={ServiceScreen} />
-      <Tab.Screen name="Financeiro" component={FinancasScreen} />
-    </Tab.Navigator>
-  );
-};
+        return <Ionicons name={iconName} size={size} color={color} />;
+      },
+      tabBarActiveTintColor: colors.primary,
+      tabBarInactiveTintColor: colors.darkGray,
+      tabBarStyle: {
+        height: 64,
+        paddingBottom: 8,
+        paddingTop: 6,
+      },
+      headerShown: false,
+    })}
+  >
+    <Tab.Screen name="Agenda" component={AgendaScreen} />
+    <Tab.Screen name="Clientes" component={ClientesScreen} />
+    <Tab.Screen name="Serviços" component={ServiceScreen} />
+    <Tab.Screen name="Financeiro" component={FinancasScreen} />
+  </Tab.Navigator>
+);
 
 const AppNavigator = () => {
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [initialRouteName, setInitialRouteName] = useState('Login');
+
+  useEffect(() => {
+    const bootstrapSession = async () => {
+      try {
+        const token = await getAuthToken();
+
+        if (token) {
+          setInitialRouteName('Main');
+        }
+      } catch (error) {
+        console.error('Erro ao restaurar sessão:', error);
+      } finally {
+        setIsBootstrapping(false);
+      }
+    };
+
+    bootstrapSession();
+  }, []);
+
+  if (isBootstrapping) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator initialRouteName={initialRouteName}>
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-        <Stack.Screen
-          name="Main"
-          component={TabNavigator}
-          options={{ headerShown: false }}
-        />
+        <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
         <Stack.Screen
           name="RegisterCustomer"
           component={RegisterCustomerScreen}
