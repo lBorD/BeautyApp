@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import colors from '../../constants/colors';
 import api from '../../services/api';
+import { isSessionExpiredError } from '../../services/sessionManager';
 import {
   createAppointment,
   getAppointmentSuggestions,
@@ -189,7 +190,9 @@ const AgendaScreen = () => {
       setAppointments(sortAppointments(data));
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
-      Alert.alert('Erro', 'Não foi possível carregar a agenda.');
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível carregar a agenda.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -224,7 +227,9 @@ const AgendaScreen = () => {
         await loadClientsAndServices();
         await loadAgenda();
       } catch (error) {
-        Alert.alert('Erro', 'Não foi possível carregar os dados iniciais da agenda.');
+        if (!isSessionExpiredError(error)) {
+          Alert.alert('Erro', 'Não foi possível carregar os dados iniciais da agenda.');
+        }
         setLoading(false);
       }
     };
