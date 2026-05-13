@@ -1,6 +1,6 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,11 +13,19 @@ import RegisterCustomerScreen from '../screens/clients/registerCustomer';
 import RegisterServiceScreen from '../screens/services/RegisterServiceScreen';
 import EditServiceScreen from '../screens/services/EditServiceScreen';
 import ServiceScreen from '../screens/services/ServiceScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
 import colors from '../constants/colors';
 import { getAuthToken } from '../services/authStorage';
+import { setSessionExpiredHandler } from '../services/sessionManager';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+const navigationRef = createNavigationContainerRef();
+
+const loginResetState = {
+  index: 0,
+  routes: [{ name: 'Login' }],
+};
 
 const TabNavigator = () => (
   <Tab.Navigator
@@ -39,6 +47,9 @@ const TabNavigator = () => (
           case 'Financeiro':
             iconName = 'cash';
             break;
+          case 'Configurações':
+            iconName = 'settings';
+            break;
           default:
             iconName = 'ellipse';
         }
@@ -59,12 +70,35 @@ const TabNavigator = () => (
     <Tab.Screen name="Clientes" component={ClientesScreen} />
     <Tab.Screen name="Serviços" component={ServiceScreen} />
     <Tab.Screen name="Financeiro" component={FinancasScreen} />
+    <Tab.Screen name="Configurações" component={SettingsScreen} />
   </Tab.Navigator>
 );
 
 const AppNavigator = () => {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [initialRouteName, setInitialRouteName] = useState('Login');
+  const pendingLoginResetRef = useRef(false);
+
+  const resetToLogin = useCallback(() => {
+    if (navigationRef.isReady()) {
+      navigationRef.reset(loginResetState);
+      pendingLoginResetRef.current = false;
+      return;
+    }
+
+    pendingLoginResetRef.current = true;
+    setInitialRouteName('Login');
+  }, []);
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      resetToLogin();
+    });
+
+    return () => {
+      setSessionExpiredHandler(null);
+    };
+  }, [resetToLogin]);
 
   useEffect(() => {
     const bootstrapSession = async () => {
@@ -93,7 +127,15 @@ const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        if (pendingLoginResetRef.current) {
+          navigationRef.reset(loginResetState);
+          pendingLoginResetRef.current = false;
+        }
+      }}
+    >
       <Stack.Navigator initialRouteName={initialRouteName}>
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
