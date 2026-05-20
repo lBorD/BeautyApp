@@ -23,12 +23,17 @@ export const updateAppointmentStatus = async (id, status) => {
   return response.data;
 };
 
-export const getAppointmentSuggestions = async ({ from, to, serviceId, excludeAppointmentId }) => {
+export const getAppointmentSuggestions = async ({ from, to, serviceId, serviceIds, excludeAppointmentId }) => {
   const params = {
     from,
     to,
-    serviceId,
   };
+
+  if (serviceIds?.length) {
+    params.serviceIds = serviceIds.join(',');
+  } else if (serviceId) {
+    params.serviceId = serviceId;
+  }
 
   if (excludeAppointmentId) {
     params.excludeAppointmentId = excludeAppointmentId;
@@ -37,4 +42,3 @@ export const getAppointmentSuggestions = async ({ from, to, serviceId, excludeAp
   const response = await api.get('/appointments/suggestions', { params });
   return response.data;
 };
-

@@ -14,6 +14,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../../constants/colors';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
@@ -28,6 +29,7 @@ import {
 const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 19;
+const CLIENT_SEARCH_LIMIT = 30;
 
 const statusLabels = {
   scheduled: 'Agendado',
@@ -44,6 +46,53 @@ const statusColors = {
 const sortAppointments = (items) => [...items].sort(
   (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
 );
+
+const getAppointmentServices = (appointment) => {
+  if (Array.isArray(appointment.services) && appointment.services.length > 0) {
+    return appointment.services;
+  }
+
+  if (!appointment.serviceId) {
+    return [];
+  }
+
+  const durationMinutes = appointment.startAt && appointment.endAt
+    ? Math.max(
+      0,
+      Math.round((new Date(appointment.endAt).getTime() - new Date(appointment.startAt).getTime()) / 60000),
+    )
+    : 0;
+
+  return [{
+    id: appointment.serviceId,
+    serviceId: appointment.serviceId,
+    name: appointment.serviceName,
+    serviceName: appointment.serviceName,
+    price: appointment.price,
+    estimatedTime: durationMinutes,
+  }];
+};
+
+const getAppointmentServiceIds = (appointment) => {
+  if (Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0) {
+    return appointment.serviceIds;
+  }
+
+  return getAppointmentServices(appointment)
+    .map((service) => service.serviceId || service.id)
+    .filter(Boolean);
+};
+
+const getAppointmentServiceName = (appointment) => {
+  if (appointment.serviceName) {
+    return appointment.serviceName;
+  }
+
+  return getAppointmentServices(appointment)
+    .map((service) => service.serviceName || service.name)
+    .filter(Boolean)
+    .join(' + ');
+};
 
 const buildDayUtcRange = (date) => {
   const from = new Date(date);
@@ -112,11 +161,17 @@ const createBaseSlots = (date) => {
 
 const AgendaScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
+  const [hasClientRecords, setHasClientRecords] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientSearchLoading, setClientSearchLoading] = useState(false);
+  const [selectedClientOption, setSelectedClientOption] = useState(null);
   const [services, setServices] = useState([]);
   const [suggestedSlots, setSuggestedSlots] = useState([]);
 
@@ -131,23 +186,56 @@ const AgendaScreen = () => {
 
   const [form, setForm] = useState({
     clientId: null,
-    serviceId: null,
+    serviceIds: [],
     startAt: new Date(),
     depositAmount: '',
     notes: '',
   });
 
-  const canSchedule = clients.length > 0 && services.length > 0;
+  const canSchedule = hasClientRecords && services.length > 0;
 
-  const selectedService = useMemo(
-    () => services.find((item) => Number(item.id) === Number(form.serviceId)),
-    [services, form.serviceId],
+  const selectedServices = useMemo(
+    () => form.serviceIds
+      .map((serviceId) => services.find((item) => Number(item.id) === Number(serviceId)))
+      .filter(Boolean),
+    [services, form.serviceIds],
   );
 
-  const selectedClient = useMemo(
-    () => clients.find((item) => Number(item.id) === Number(form.clientId)),
-    [clients, form.clientId],
+  const selectedServicesTotal = useMemo(
+    () => selectedServices.reduce((totals, service) => ({
+      price: totals.price + Number(service.price || 0),
+      estimatedTime: totals.estimatedTime + Number(service.estimatedTime || 0),
+    }), { price: 0, estimatedTime: 0 }),
+    [selectedServices],
   );
+
+  const selectedClient = useMemo(() => {
+    const listedClient = clients.find((item) => Number(item.id) === Number(form.clientId));
+
+    if (listedClient) {
+      return listedClient;
+    }
+
+    if (selectedClientOption && Number(selectedClientOption.id) === Number(form.clientId)) {
+      return selectedClientOption;
+    }
+
+    return null;
+  }, [clients, form.clientId, selectedClientOption]);
+
+  const applyClientOptions = (nextClients) => {
+    setClients((previousClients) => {
+      const selected = selectedClientOption && Number(selectedClientOption.id) === Number(form.clientId)
+        ? selectedClientOption
+        : previousClients.find((item) => Number(item.id) === Number(form.clientId));
+
+      if (selected && !nextClients.some((item) => Number(item.id) === Number(selected.id))) {
+        return [selected, ...nextClients];
+      }
+
+      return nextClients;
+    });
+  };
 
   const activeAppointments = useMemo(
     () => appointments.filter((item) => item.status !== 'canceled'),
@@ -169,13 +257,71 @@ const AgendaScreen = () => {
     [activeAppointments],
   );
 
+  const loadClientAvailability = async () => {
+    try {
+      const response = await api.get('/clients/search', {
+        params: { page: 1, limit: 1 },
+      });
+
+      const hasRecords = Number(response.data.total || 0) > 0;
+      setHasClientRecords(hasRecords);
+      return hasRecords;
+    } catch (error) {
+      console.error('Erro ao verificar clientes:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        setHasClientRecords(false);
+      }
+      return false;
+    }
+  };
+
+  const loadClientOptions = async (search = '') => {
+    const normalizedSearch = search.trim();
+
+    if (!normalizedSearch) {
+      setClients(selectedClientOption ? [selectedClientOption] : []);
+      setClientSearchLoading(false);
+      return selectedClientOption ? [selectedClientOption] : [];
+    }
+
+    setClientSearchLoading(true);
+
+    try {
+      const response = await api.get('/clients/search', {
+        params: {
+          page: 1,
+          limit: CLIENT_SEARCH_LIMIT,
+          search: normalizedSearch,
+        },
+      });
+
+      const nextClients = response.data.clients || [];
+      applyClientOptions(nextClients);
+
+      if (nextClients.length > 0) {
+        setHasClientRecords(true);
+      }
+
+      return nextClients;
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        setClients([]);
+      }
+      return [];
+    } finally {
+      setClientSearchLoading(false);
+    }
+  };
+
   const loadClientsAndServices = async () => {
-    const [clientsResponse, servicesResponse] = await Promise.all([
-      api.get('/clients/search', { params: { page: 1, limit: 100 } }),
+    const [, servicesResponse] = await Promise.all([
+      loadClientAvailability(),
       api.get('/services/search/active'),
     ]);
 
-    setClients(clientsResponse.data.clients || []);
+    setClients([]);
+    setSelectedClientOption(null);
     setServices(servicesResponse.data || []);
   };
 
@@ -199,8 +345,8 @@ const AgendaScreen = () => {
     }
   };
 
-  const loadSuggestions = async (serviceId, excludeAppointmentId = null) => {
-    if (!serviceId) {
+  const loadSuggestions = async (serviceIds, excludeAppointmentId = null) => {
+    if (!serviceIds?.length) {
       setSuggestedSlots([]);
       return;
     }
@@ -210,7 +356,7 @@ const AgendaScreen = () => {
       const data = await getAppointmentSuggestions({
         from,
         to,
-        serviceId,
+        serviceIds,
         excludeAppointmentId,
       });
 
@@ -243,13 +389,37 @@ const AgendaScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
+  useEffect(() => {
+    if (!modalVisible) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      if (clientSearch.trim()) {
+        loadClientOptions(clientSearch);
+        return;
+      }
+
+      setClients(selectedClientOption ? [selectedClientOption] : []);
+      setClientSearchLoading(false);
+    }, clientSearch.trim() ? 300 : 0);
+
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalVisible, clientSearch]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
   };
 
   const openCreateModal = async () => {
-    if (!canSchedule) {
+    setClientSearch('');
+    setClients([]);
+    setSelectedClientOption(null);
+    const hasClients = await loadClientAvailability();
+
+    if (!hasClients || services.length === 0) {
       Alert.alert(
         'Dados necessários',
         'Cadastre ao menos 1 cliente e 1 serviço para criar agendamentos.',
@@ -260,36 +430,45 @@ const AgendaScreen = () => {
     const defaultStartAt = new Date(selectedDate);
     defaultStartAt.setHours(DAY_START_HOUR, 0, 0, 0);
 
-    const defaultClient = clients[0];
     const defaultService = services[0];
 
     setIsEditing(false);
     setEditingAppointmentId(null);
     setForm({
-      clientId: defaultClient.id,
-      serviceId: defaultService.id,
+      clientId: null,
+      serviceIds: [defaultService.id],
       startAt: defaultStartAt,
       depositAmount: '',
       notes: '',
     });
 
-    await loadSuggestions(defaultService.id, null);
+    await loadSuggestions([defaultService.id], null);
     setModalVisible(true);
   };
 
   const openEditModal = async (appointment) => {
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
+    setClientSearch('');
+    const appointmentServiceIds = getAppointmentServiceIds(appointment);
+    const appointmentClient = {
+      id: appointment.clientId,
+      name: appointment.clientName || 'Cliente',
+      lastName: '',
+    };
+
+    setSelectedClientOption(appointmentClient);
+    setClients([appointmentClient]);
 
     setForm({
       clientId: appointment.clientId,
-      serviceId: appointment.serviceId,
+      serviceIds: appointmentServiceIds,
       startAt: new Date(appointment.startAt),
       depositAmount: appointment.depositAmount ? String(appointment.depositAmount) : '',
       notes: appointment.notes || '',
     });
 
-    await loadSuggestions(appointment.serviceId, appointment.id);
+    await loadSuggestions(appointmentServiceIds, appointment.id);
     setModalVisible(true);
   };
 
@@ -297,26 +476,37 @@ const AgendaScreen = () => {
     setModalVisible(false);
     setShowStartPicker(false);
     setSubmitting(false);
+    setClientSearch('');
+    setClientSearchLoading(false);
   };
 
   const buildOptimisticAppointment = ({ id, status = 'scheduled' }) => {
     const startAtDate = form.startAt;
-    const estimatedTime = Number(selectedService?.estimatedTime || 0);
-    const endAtDate = new Date(startAtDate.getTime() + estimatedTime * 60 * 1000);
+    const endAtDate = new Date(startAtDate.getTime() + selectedServicesTotal.estimatedTime * 60 * 1000);
 
     const normalizedDeposit = form.depositAmount
       ? Number(String(form.depositAmount).replace(',', '.'))
       : 0;
+    const serviceName = selectedServices.map((service) => service.name).filter(Boolean).join(' + ');
 
     return {
       id,
       clientId: form.clientId,
-      serviceId: form.serviceId,
+      serviceId: form.serviceIds[0],
+      serviceIds: form.serviceIds,
+      services: selectedServices.map((service) => ({
+        id: service.id,
+        serviceId: service.id,
+        name: service.name,
+        serviceName: service.name,
+        price: Number(service.price || 0),
+        estimatedTime: Number(service.estimatedTime || 0),
+      })),
       startAt: startAtDate.toISOString(),
       endAt: endAtDate.toISOString(),
       clientName: selectedClient ? `${selectedClient.name} ${selectedClient.lastName || ''}`.trim() : '',
-      serviceName: selectedService?.name || '',
-      price: Number(selectedService?.price || 0),
+      serviceName,
+      price: selectedServicesTotal.price,
       depositAmount: Number.isNaN(normalizedDeposit) ? 0 : normalizedDeposit,
       status,
       notes: form.notes,
@@ -329,14 +519,14 @@ const AgendaScreen = () => {
       return;
     }
 
-    if (!form.clientId || !form.serviceId || !form.startAt) {
+    if (!form.clientId || form.serviceIds.length === 0 || !form.startAt) {
       Alert.alert('Campos obrigatórios', 'Selecione cliente, serviço e horário.');
       return;
     }
 
     const payload = {
       clientId: form.clientId,
-      serviceId: form.serviceId,
+      serviceIds: form.serviceIds,
       startAt: form.startAt.toISOString(),
       depositAmount: form.depositAmount ? Number(String(form.depositAmount).replace(',', '.')) : 0,
       notes: form.notes,
@@ -435,7 +625,7 @@ const AgendaScreen = () => {
       </View>
 
       <Text style={styles.cardTitle}>{item.clientName || 'Cliente'}</Text>
-      <Text style={styles.cardSubtitle}>{item.serviceName || 'Serviço'}</Text>
+      <Text style={styles.cardSubtitle}>{getAppointmentServiceName(item) || 'Serviço'}</Text>
       <Text style={styles.cardPrice}>{formatCurrency(item.price)}</Text>
 
       <View style={styles.cardActions}>
@@ -533,22 +723,38 @@ const AgendaScreen = () => {
           data={appointments}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderAppointmentItem}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[styles.listContainer, { paddingBottom: 96 + bottomInset }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={openCreateModal}>
+      <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
 
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: 18 + bottomInset }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>{isEditing ? 'Editar agendamento' : 'Novo agendamento'}</Text>
 
               <Text style={styles.fieldLabel}>Cliente</Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={18} color={colors.darkGray} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar cliente"
+                  value={clientSearch}
+                  onChangeText={setClientSearch}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+                {clientSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setClientSearch('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.darkGray} />
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.chipsWrap}>
                 {clients.map((client) => {
                   const isActive = Number(form.clientId) === Number(client.id);
@@ -556,7 +762,10 @@ const AgendaScreen = () => {
                     <TouchableOpacity
                       key={client.id}
                       style={[styles.chip, isActive && styles.chipActive]}
-                      onPress={() => setForm((prev) => ({ ...prev, clientId: client.id }))}
+                      onPress={() => {
+                        setSelectedClientOption(client);
+                        setForm((prev) => ({ ...prev, clientId: client.id }));
+                      }}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
                         {client.name} {client.lastName || ''}
@@ -564,19 +773,32 @@ const AgendaScreen = () => {
                     </TouchableOpacity>
                   );
                 })}
+                {clientSearchLoading && (
+                  <Text style={styles.helperText}>Buscando...</Text>
+                )}
+                {!clientSearchLoading && !clientSearch.trim() && clients.length === 0 && (
+                  <Text style={styles.helperText}>Digite para buscar uma cliente.</Text>
+                )}
+                {!clientSearchLoading && clientSearch.trim() && clients.length === 0 && (
+                  <Text style={styles.helperText}>Nenhum cliente encontrado.</Text>
+                )}
               </View>
 
-              <Text style={styles.fieldLabel}>Serviço</Text>
+              <Text style={styles.fieldLabel}>Serviços</Text>
               <View style={styles.chipsWrap}>
                 {services.map((service) => {
-                  const isActive = Number(form.serviceId) === Number(service.id);
+                  const isActive = form.serviceIds.some((serviceId) => Number(serviceId) === Number(service.id));
                   return (
                     <TouchableOpacity
                       key={service.id}
                       style={[styles.chip, isActive && styles.chipActive]}
                       onPress={async () => {
-                        setForm((prev) => ({ ...prev, serviceId: service.id }));
-                        await loadSuggestions(service.id, editingAppointmentId);
+                        const nextServiceIds = isActive
+                          ? form.serviceIds.filter((serviceId) => Number(serviceId) !== Number(service.id))
+                          : [...form.serviceIds, service.id];
+
+                        setForm((prev) => ({ ...prev, serviceIds: nextServiceIds }));
+                        await loadSuggestions(nextServiceIds, editingAppointmentId);
                       }}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
@@ -586,6 +808,11 @@ const AgendaScreen = () => {
                   );
                 })}
               </View>
+              {selectedServices.length > 0 && (
+                <Text style={styles.selectionSummary}>
+                  {selectedServices.length} serviço(s) - {selectedServicesTotal.estimatedTime} min - {formatCurrency(selectedServicesTotal.price)}
+                </Text>
+              )}
 
               <Text style={styles.fieldLabel}>Horário</Text>
               <TouchableOpacity style={styles.inputLike} onPress={() => setShowStartPicker(true)}>
@@ -868,6 +1095,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 8,
   },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: colors.white,
+    marginBottom: 8,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    paddingVertical: 10,
+  },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -891,6 +1135,12 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: colors.white,
+    fontWeight: '700',
+  },
+  selectionSummary: {
+    marginTop: 8,
+    color: colors.primary,
+    fontSize: 12,
     fontWeight: '700',
   },
   suggestionChip: {
@@ -965,4 +1215,3 @@ const styles = StyleSheet.create({
 });
 
 export default AgendaScreen;
-

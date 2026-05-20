@@ -4,6 +4,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import ClientesScreen from '../screens/clients/cliente';
 import FinancasScreen from '../screens/finance/FinancaScreen';
@@ -27,52 +28,57 @@ const loginResetState = {
   routes: [{ name: 'Login' }],
 };
 
-const TabNavigator = () => (
-  <Tab.Navigator
-    initialRouteName="Agenda"
-    screenOptions={({ route }) => ({
-      tabBarIcon: ({ color, size }) => {
-        let iconName = 'ellipse';
+const TabNavigator = () => {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
 
-        switch (route.name) {
-          case 'Agenda':
-            iconName = 'calendar';
-            break;
-          case 'Clientes':
-            iconName = 'people';
-            break;
-          case 'Serviços':
-            iconName = 'briefcase';
-            break;
-          case 'Financeiro':
-            iconName = 'cash';
-            break;
-          case 'Configurações':
-            iconName = 'settings';
-            break;
-          default:
-            iconName = 'ellipse';
-        }
+  return (
+    <Tab.Navigator
+      initialRouteName="Agenda"
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ color, size }) => {
+          let iconName = 'ellipse';
 
-        return <Ionicons name={iconName} size={size} color={color} />;
-      },
-      tabBarActiveTintColor: colors.primary,
-      tabBarInactiveTintColor: colors.darkGray,
-      tabBarStyle: {
-        height: 64,
-        paddingBottom: 8,
-        paddingTop: 6,
-      },
-      headerShown: false,
-    })}
-  >
-    <Tab.Screen name="Agenda" component={AgendaScreen} />
-    <Tab.Screen name="Clientes" component={ClientesScreen} />
-    <Tab.Screen name="Serviços" component={ServiceScreen} />
-    <Tab.Screen name="Financeiro" component={FinancasScreen} />
-    <Tab.Screen name="Configurações" component={SettingsScreen} />
-  </Tab.Navigator>
-);
+          switch (route.name) {
+            case 'Agenda':
+              iconName = 'calendar';
+              break;
+            case 'Clientes':
+              iconName = 'people';
+              break;
+            case 'Serviços':
+              iconName = 'briefcase';
+              break;
+            case 'Financeiro':
+              iconName = 'cash';
+              break;
+            case 'Configurações':
+              iconName = 'settings';
+              break;
+            default:
+              iconName = 'ellipse';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.darkGray,
+        tabBarStyle: {
+          height: 56 + bottomInset,
+          paddingBottom: bottomInset,
+          paddingTop: 6,
+        },
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen name="Agenda" component={AgendaScreen} />
+      <Tab.Screen name="Clientes" component={ClientesScreen} />
+      <Tab.Screen name="Serviços" component={ServiceScreen} />
+      <Tab.Screen name="Financeiro" component={FinancasScreen} />
+      <Tab.Screen name="Configurações" component={SettingsScreen} />
+    </Tab.Navigator>
+  );
+};
 
 const AppNavigator = () => {
   const [isBootstrapping, setIsBootstrapping] = useState(true);

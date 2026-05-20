@@ -14,8 +14,8 @@
     "build:apk": "eas build --platform android --profile apk",
     "build:ios": "eas build --platform ios",
     "build:dev": "eas build --profile development --no-build-cache --platform android",
-    "update:dev": "eas update --branch development --message \"Update development\"",
-    "update:prod": "eas update --branch production --message \"Update production\""
+    "update:dev": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch development --message \"Update development\"",
+    "update:prod": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch production --message \"Update production\""
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
