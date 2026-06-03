@@ -9,11 +9,13 @@ import colors from '../constants/colors';
  * @param {function} onPress - Função que será executada ao pressionar o botão
  * @param {object} style - Estilos adicionais para customizar o botão (opcional)
  */
-const Button = ({ title, onPress, style }) => {
+const Button = ({ title, onPress, style, disabled = false }) => {
   return (
     <TouchableOpacity
-      style={[styles.button, style]}
+      style={[styles.button, disabled && styles.buttonDisabled, style]}
       onPress={onPress}
+      disabled={disabled}
+      activeOpacity={disabled ? 1 : 0.7}
     >
       <Text style={styles.buttonText}>{title}</Text>
     </TouchableOpacity>
@@ -31,6 +33,9 @@ const styles = StyleSheet.create({
     width: '80%',            // Largura do botão
     marginVertical: 10,
     alignSelf: 'center'     // Margem vertical
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
   buttonText: {
     // Modifique estas propriedades para alterar o texto do botão

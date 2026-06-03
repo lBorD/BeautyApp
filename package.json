@@ -1,7 +1,7 @@
 {
   "name": "beautyapp",
   "license": "0BSD",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.js",
   "scripts": {
     "start": "npx expo start --clear --go",
@@ -14,8 +14,8 @@
     "build:apk": "eas build --platform android --profile apk",
     "build:ios": "eas build --platform ios",
     "build:dev": "eas build --profile development --no-build-cache --platform android",
-    "update:dev": "eas update --branch development --message \"Update development\"",
-    "update:prod": "eas update --branch production --message \"Update production\""
+    "update:dev": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch development --message \"Update development\"",
+    "update:prod": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch production --message \"Update production\""
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -30,11 +30,15 @@
     "date-fns": "^4.1.0",
     "expo": "~53.0.0",
     "expo-asset": "~11.1.7",
+    "expo-auth-session": "~6.2.1",
+    "expo-constants": "~17.1.8",
+    "expo-crypto": "~14.1.5",
     "expo-dev-client": "~5.1.0",
     "expo-font": "~13.3.2",
     "expo-navigation-bar": "~4.2.4",
     "expo-status-bar": "~2.2.3",
     "expo-updates": "~0.28.0",
+    "expo-web-browser": "~14.2.0",
     "react": "19.0.0",
     "react-native": "0.79.2",
     "react-native-gesture-handler": "~2.24.0",

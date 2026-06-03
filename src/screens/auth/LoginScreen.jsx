@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Alert, Image } from 'react-native';
+import { View, TextInput, StyleSheet, Alert, Image, ActivityIndicator, Modal } from 'react-native';
 import validator from 'validator';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +12,7 @@ const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberLogin, setRememberLogin] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -52,6 +53,10 @@ const LoginScreen = () => {
   };
 
   const handleLogin = async () => {
+    if (isLoading) {
+      return;
+    }
+
     if (!email) {
       Alert.alert('Digite o e-mail', 'O campo de e-mail não pode ficar vazio.');
       return;
@@ -66,6 +71,8 @@ const LoginScreen = () => {
       Alert.alert('E-mail inválido', 'Por favor, insira um e-mail válido.');
       return;
     }
+
+    setIsLoading(true);
 
     try {
       const response = await api.post('/auth/login', {
@@ -84,6 +91,8 @@ const LoginScreen = () => {
     } catch (error) {
       console.error('Erro ao fazer login:', error);
       Alert.alert('Erro', 'Não foi possível fazer login agora. Tente novamente.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -117,7 +126,7 @@ const LoginScreen = () => {
           textPosition="right"
         />
         <View style={styles.button}>
-          <Button title="Entrar" onPress={handleLogin} />
+          <Button title={isLoading ? 'Entrando...' : 'Entrar'} onPress={handleLogin} disabled={isLoading} />
         </View>
         <View style={styles.button}>
           <Button
@@ -126,6 +135,14 @@ const LoginScreen = () => {
           />
         </View>
       </View>
+
+      <Modal visible={isLoading} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#ECACD1" />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -148,6 +165,20 @@ const styles = StyleSheet.create({
     marginTop: -10,
     borderRadius: 8,
   },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  loadingBox: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  },
   logo: {
     width: 250,
     height: 250,
@@ -157,4 +188,3 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
-

@@ -1,8 +1,10 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -14,11 +16,12 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../../constants/colors';
 import api from '../../services/api';
+import { isSessionExpiredError } from '../../services/sessionManager';
 import {
   createAppointment,
-  getAppointmentSuggestions,
   listAppointments,
   updateAppointment,
   updateAppointmentStatus,
@@ -27,6 +30,9 @@ import {
 const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 19;
+const CLIENT_SEARCH_LIMIT = 30;
+const DEFAULT_DEPOSIT_PERCENT = 30;
+const DEPOSIT_PERCENT_OPTIONS = [10, 15, 20, 25, 30, 35, 40, 45];
 
 const statusLabels = {
   scheduled: 'Agendado',
@@ -40,9 +46,68 @@ const statusColors = {
   completed: colors.success,
 };
 
+const googleSyncLabels = {
+  pending: 'Google pendente',
+  synced: 'Google sincronizado',
+  failed: 'Falha no Google',
+};
+
+const googleSyncColors = {
+  pending: colors.warning,
+  synced: colors.success,
+  failed: colors.error,
+};
+
 const sortAppointments = (items) => [...items].sort(
   (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
 );
+
+const getAppointmentServices = (appointment) => {
+  if (Array.isArray(appointment.services) && appointment.services.length > 0) {
+    return appointment.services;
+  }
+
+  if (!appointment.serviceId) {
+    return [];
+  }
+
+  const durationMinutes = appointment.startAt && appointment.endAt
+    ? Math.max(
+      0,
+      Math.round((new Date(appointment.endAt).getTime() - new Date(appointment.startAt).getTime()) / 60000),
+    )
+    : 0;
+
+  return [{
+    id: appointment.serviceId,
+    serviceId: appointment.serviceId,
+    name: appointment.serviceName,
+    serviceName: appointment.serviceName,
+    price: appointment.price,
+    estimatedTime: durationMinutes,
+  }];
+};
+
+const getAppointmentServiceIds = (appointment) => {
+  if (Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0) {
+    return appointment.serviceIds;
+  }
+
+  return getAppointmentServices(appointment)
+    .map((service) => service.serviceId || service.id)
+    .filter(Boolean);
+};
+
+const getAppointmentServiceName = (appointment) => {
+  if (appointment.serviceName) {
+    return appointment.serviceName;
+  }
+
+  return getAppointmentServices(appointment)
+    .map((service) => service.serviceName || service.name)
+    .filter(Boolean)
+    .join(' + ');
+};
 
 const buildDayUtcRange = (date) => {
   const from = new Date(date);
@@ -57,23 +122,35 @@ const buildDayUtcRange = (date) => {
   };
 };
 
-const buildSuggestionWindowUtc = (date) => {
-  const from = new Date(date);
-  from.setHours(DAY_START_HOUR, 0, 0, 0);
-
-  const to = new Date(date);
-  to.setHours(DAY_END_HOUR, 0, 0, 0);
-
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
-};
-
 const formatCurrency = (value = 0) => Number(value).toLocaleString('pt-BR', {
   style: 'currency',
   currency: 'BRL',
 });
+
+const roundCurrency = (value = 0) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const calculateServicesTotal = (services) => services.reduce((totals, service) => ({
+  price: totals.price + Number(service.price || 0),
+  estimatedTime: totals.estimatedTime + Number(service.estimatedTime || 0),
+}), { price: 0, estimatedTime: 0 });
+
+const calculateDepositAmount = (price = 0, percent = DEFAULT_DEPOSIT_PERCENT) => (
+  roundCurrency((Number(price || 0) * Number(percent || 0)) / 100)
+);
+
+const inferDepositPercent = (depositAmount = 0, price = 0) => {
+  const numericPrice = Number(price || 0);
+  const numericDeposit = Number(depositAmount || 0);
+
+  if (!numericPrice || !Number.isFinite(numericPrice) || !Number.isFinite(numericDeposit)) {
+    return DEFAULT_DEPOSIT_PERCENT;
+  }
+
+  const currentPercent = (numericDeposit / numericPrice) * 100;
+  return DEPOSIT_PERCENT_OPTIONS.reduce((closest, option) => (
+    Math.abs(option - currentPercent) < Math.abs(closest - currentPercent) ? option : closest
+  ), DEFAULT_DEPOSIT_PERCENT);
+};
 
 const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
   weekday: 'long',
@@ -81,17 +158,26 @@ const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
   month: 'long',
 });
 
-const formatDateTimeLabel = (date) => date.toLocaleString('pt-BR', {
+const formatShortDate = (date) => date.toLocaleDateString('pt-BR', {
   day: '2-digit',
   month: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
+  year: 'numeric',
 });
 
 const formatTime = (value) => new Date(value).toLocaleTimeString('pt-BR', {
   hour: '2-digit',
   minute: '2-digit',
 });
+
+const getAppointmentErrorMessage = (error, fallback) => (
+  error?.response?.data?.error
+  || error?.response?.data?.message
+  || fallback
+);
+
+const isAppointmentConflictError = (error) => error?.response?.status === 409;
+
+const hasTimeOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
 const createBaseSlots = (date) => {
   const slots = [];
@@ -111,13 +197,18 @@ const createBaseSlots = (date) => {
 
 const AgendaScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
+  const [hasClientRecords, setHasClientRecords] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientSearchLoading, setClientSearchLoading] = useState(false);
+  const [selectedClientOption, setSelectedClientOption] = useState(null);
   const [services, setServices] = useState([]);
-  const [suggestedSlots, setSuggestedSlots] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -127,26 +218,48 @@ const AgendaScreen = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
+  const [startPickerMode, setStartPickerMode] = useState('date');
 
   const [form, setForm] = useState({
     clientId: null,
-    serviceId: null,
+    serviceIds: [],
     startAt: new Date(),
-    depositAmount: '',
+    depositPercent: DEFAULT_DEPOSIT_PERCENT,
     notes: '',
   });
 
-  const canSchedule = clients.length > 0 && services.length > 0;
+  const canSchedule = hasClientRecords && services.length > 0;
 
-  const selectedService = useMemo(
-    () => services.find((item) => Number(item.id) === Number(form.serviceId)),
-    [services, form.serviceId],
+  const selectedServices = useMemo(
+    () => form.serviceIds
+      .map((serviceId) => services.find((item) => Number(item.id) === Number(serviceId)))
+      .filter(Boolean),
+    [services, form.serviceIds],
   );
 
-  const selectedClient = useMemo(
-    () => clients.find((item) => Number(item.id) === Number(form.clientId)),
-    [clients, form.clientId],
+  const selectedServicesTotal = useMemo(
+    () => calculateServicesTotal(selectedServices),
+    [selectedServices],
   );
+
+  const selectedDepositAmount = useMemo(
+    () => calculateDepositAmount(selectedServicesTotal.price, form.depositPercent),
+    [form.depositPercent, selectedServicesTotal.price],
+  );
+
+  const applyClientOptions = (nextClients) => {
+    setClients((previousClients) => {
+      const selected = selectedClientOption && Number(selectedClientOption.id) === Number(form.clientId)
+        ? selectedClientOption
+        : previousClients.find((item) => Number(item.id) === Number(form.clientId));
+
+      if (selected && !nextClients.some((item) => Number(item.id) === Number(selected.id))) {
+        return [selected, ...nextClients];
+      }
+
+      return nextClients;
+    });
+  };
 
   const activeAppointments = useMemo(
     () => appointments.filter((item) => item.status !== 'canceled'),
@@ -168,13 +281,71 @@ const AgendaScreen = () => {
     [activeAppointments],
   );
 
+  const loadClientAvailability = async () => {
+    try {
+      const response = await api.get('/clients/search', {
+        params: { page: 1, limit: 1 },
+      });
+
+      const hasRecords = Number(response.data.total || 0) > 0;
+      setHasClientRecords(hasRecords);
+      return hasRecords;
+    } catch (error) {
+      console.error('Erro ao verificar clientes:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        setHasClientRecords(false);
+      }
+      return false;
+    }
+  };
+
+  const loadClientOptions = async (search = '') => {
+    const normalizedSearch = search.trim();
+
+    if (!normalizedSearch) {
+      setClients(selectedClientOption ? [selectedClientOption] : []);
+      setClientSearchLoading(false);
+      return selectedClientOption ? [selectedClientOption] : [];
+    }
+
+    setClientSearchLoading(true);
+
+    try {
+      const response = await api.get('/clients/search', {
+        params: {
+          page: 1,
+          limit: CLIENT_SEARCH_LIMIT,
+          search: normalizedSearch,
+        },
+      });
+
+      const nextClients = response.data.clients || [];
+      applyClientOptions(nextClients);
+
+      if (nextClients.length > 0) {
+        setHasClientRecords(true);
+      }
+
+      return nextClients;
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        setClients([]);
+      }
+      return [];
+    } finally {
+      setClientSearchLoading(false);
+    }
+  };
+
   const loadClientsAndServices = async () => {
-    const [clientsResponse, servicesResponse] = await Promise.all([
-      api.get('/clients/search', { params: { page: 1, limit: 100 } }),
+    const [, servicesResponse] = await Promise.all([
+      loadClientAvailability(),
       api.get('/services/search/active'),
     ]);
 
-    setClients(clientsResponse.data.clients || []);
+    setClients([]);
+    setSelectedClientOption(null);
     setServices(servicesResponse.data || []);
   };
 
@@ -189,32 +360,12 @@ const AgendaScreen = () => {
       setAppointments(sortAppointments(data));
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
-      Alert.alert('Erro', 'Não foi possível carregar a agenda.');
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível carregar a agenda.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  const loadSuggestions = async (serviceId, excludeAppointmentId = null) => {
-    if (!serviceId) {
-      setSuggestedSlots([]);
-      return;
-    }
-
-    try {
-      const { from, to } = buildSuggestionWindowUtc(selectedDate);
-      const data = await getAppointmentSuggestions({
-        from,
-        to,
-        serviceId,
-        excludeAppointmentId,
-      });
-
-      setSuggestedSlots(data);
-    } catch (error) {
-      console.error('Erro ao buscar sugestões:', error.response?.data || error.message);
-      setSuggestedSlots([]);
     }
   };
 
@@ -224,7 +375,9 @@ const AgendaScreen = () => {
         await loadClientsAndServices();
         await loadAgenda();
       } catch (error) {
-        Alert.alert('Erro', 'Não foi possível carregar os dados iniciais da agenda.');
+        if (!isSessionExpiredError(error)) {
+          Alert.alert('Erro', 'Não foi possível carregar os dados iniciais da agenda.');
+        }
         setLoading(false);
       }
     };
@@ -238,13 +391,37 @@ const AgendaScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
+  useEffect(() => {
+    if (!modalVisible) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      if (clientSearch.trim()) {
+        loadClientOptions(clientSearch);
+        return;
+      }
+
+      setClients(selectedClientOption ? [selectedClientOption] : []);
+      setClientSearchLoading(false);
+    }, clientSearch.trim() ? 300 : 0);
+
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalVisible, clientSearch]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
   };
 
   const openCreateModal = async () => {
-    if (!canSchedule) {
+    setClientSearch('');
+    setClients([]);
+    setSelectedClientOption(null);
+    const hasClients = await loadClientAvailability();
+
+    if (!hasClients || services.length === 0) {
       Alert.alert(
         'Dados necessários',
         'Cadastre ao menos 1 cliente e 1 serviço para criar agendamentos.',
@@ -255,68 +432,120 @@ const AgendaScreen = () => {
     const defaultStartAt = new Date(selectedDate);
     defaultStartAt.setHours(DAY_START_HOUR, 0, 0, 0);
 
-    const defaultClient = clients[0];
-    const defaultService = services[0];
-
     setIsEditing(false);
     setEditingAppointmentId(null);
     setForm({
-      clientId: defaultClient.id,
-      serviceId: defaultService.id,
+      clientId: null,
+      serviceIds: [services[0].id],
       startAt: defaultStartAt,
-      depositAmount: '',
+      depositPercent: DEFAULT_DEPOSIT_PERCENT,
       notes: '',
     });
 
-    await loadSuggestions(defaultService.id, null);
     setModalVisible(true);
   };
 
   const openEditModal = async (appointment) => {
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
+    setClientSearch('');
+    const appointmentServiceIds = getAppointmentServiceIds(appointment);
+    const appointmentClient = {
+      id: appointment.clientId,
+      name: appointment.clientName || 'Cliente',
+      lastName: '',
+    };
+
+    setSelectedClientOption(appointmentClient);
+    setClients([appointmentClient]);
 
     setForm({
       clientId: appointment.clientId,
-      serviceId: appointment.serviceId,
+      serviceIds: appointmentServiceIds,
       startAt: new Date(appointment.startAt),
-      depositAmount: appointment.depositAmount ? String(appointment.depositAmount) : '',
+      depositPercent: inferDepositPercent(appointment.depositAmount, appointment.price),
       notes: appointment.notes || '',
     });
 
-    await loadSuggestions(appointment.serviceId, appointment.id);
     setModalVisible(true);
   };
 
   const closeModal = () => {
     setModalVisible(false);
     setShowStartPicker(false);
+    setStartPickerMode('date');
     setSubmitting(false);
+    setClientSearch('');
+    setClientSearchLoading(false);
   };
 
-  const buildOptimisticAppointment = ({ id, status = 'scheduled' }) => {
-    const startAtDate = form.startAt;
-    const estimatedTime = Number(selectedService?.estimatedTime || 0);
-    const endAtDate = new Date(startAtDate.getTime() + estimatedTime * 60 * 1000);
+  const openStartPicker = (mode) => {
+    setStartPickerMode(mode);
+    setShowStartPicker(true);
+  };
 
-    const normalizedDeposit = form.depositAmount
-      ? Number(String(form.depositAmount).replace(',', '.'))
-      : 0;
+  const handleStartPickerChange = (event, pickedDate) => {
+    if (Platform.OS === 'android') {
+      setShowStartPicker(false);
+    }
 
-    return {
-      id,
-      clientId: form.clientId,
-      serviceId: form.serviceId,
-      startAt: startAtDate.toISOString(),
-      endAt: endAtDate.toISOString(),
-      clientName: selectedClient ? `${selectedClient.name} ${selectedClient.lastName || ''}`.trim() : '',
-      serviceName: selectedService?.name || '',
-      price: Number(selectedService?.price || 0),
-      depositAmount: Number.isNaN(normalizedDeposit) ? 0 : normalizedDeposit,
-      status,
-      notes: form.notes,
-      googleSyncStatus: 'pending',
-    };
+    if (event?.type === 'dismissed' || !pickedDate) {
+      if (Platform.OS === 'android') {
+        setStartPickerMode('date');
+      }
+      return;
+    }
+
+    if (startPickerMode === 'date') {
+      setForm((prev) => {
+        const nextStartAt = new Date(prev.startAt);
+        nextStartAt.setFullYear(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
+        return { ...prev, startAt: nextStartAt };
+      });
+
+      if (Platform.OS === 'android') {
+        setStartPickerMode('date');
+      }
+      return;
+    }
+
+    setForm((prev) => {
+      const nextStartAt = new Date(prev.startAt);
+      nextStartAt.setHours(pickedDate.getHours(), pickedDate.getMinutes(), 0, 0);
+      return { ...prev, startAt: nextStartAt };
+    });
+    if (Platform.OS === 'android') {
+      setStartPickerMode('date');
+    }
+  };
+
+  const hasLocalAppointmentConflict = () => {
+    if (!form.startAt || selectedServicesTotal.estimatedTime <= 0) {
+      return false;
+    }
+
+    const nextStartAt = form.startAt;
+    const nextEndAt = new Date(nextStartAt.getTime() + selectedServicesTotal.estimatedTime * 60 * 1000);
+
+    return activeAppointments.some((appointment) => {
+      if (isEditing && String(appointment.id) === String(editingAppointmentId)) {
+        return false;
+      }
+
+      return hasTimeOverlap(
+        nextStartAt,
+        nextEndAt,
+        new Date(appointment.startAt),
+        new Date(appointment.endAt),
+      );
+    });
+  };
+
+  const showAppointmentConflictAlert = () => {
+    Alert.alert(
+      'Conflito de horário',
+      'Já existe outro agendamento nesse horário. Ajuste o horário e tente salvar novamente.',
+    );
   };
 
   const handleSaveAppointment = async () => {
@@ -324,71 +553,65 @@ const AgendaScreen = () => {
       return;
     }
 
-    if (!form.clientId || !form.serviceId || !form.startAt) {
+    if (!form.clientId || form.serviceIds.length === 0 || !form.startAt) {
       Alert.alert('Campos obrigatórios', 'Selecione cliente, serviço e horário.');
       return;
     }
 
     const payload = {
       clientId: form.clientId,
-      serviceId: form.serviceId,
+      serviceIds: form.serviceIds,
       startAt: form.startAt.toISOString(),
-      depositAmount: form.depositAmount ? Number(String(form.depositAmount).replace(',', '.')) : 0,
+      depositAmount: selectedDepositAmount,
       notes: form.notes,
     };
 
-    if (Number.isNaN(payload.depositAmount) || payload.depositAmount < 0) {
-      Alert.alert('Sinal inválido', 'Informe um valor numérico válido para o sinal.');
+    if (!Number.isFinite(payload.depositAmount) || payload.depositAmount < 0) {
+      Alert.alert('Sinal inválido', 'Selecione uma porcentagem válida para o sinal.');
+      return;
+    }
+
+    if (hasLocalAppointmentConflict()) {
+      showAppointmentConflictAlert();
       return;
     }
 
     setSubmitting(true);
 
     if (isEditing && editingAppointmentId) {
-      const previousItem = appointments.find((item) => item.id === editingAppointmentId);
-      const optimisticItem = {
-        ...previousItem,
-        ...buildOptimisticAppointment({ id: editingAppointmentId, status: previousItem?.status || 'scheduled' }),
-      };
-
-      setAppointments((prev) => sortAppointments(prev.map((item) => (
-        item.id === editingAppointmentId ? optimisticItem : item
-      ))));
-
-      closeModal();
-
       try {
         const updated = await updateAppointment(editingAppointmentId, payload);
         setAppointments((prev) => sortAppointments(prev.map((item) => (
-          item.id === editingAppointmentId ? updated : item
+          String(item.id) === String(editingAppointmentId) ? updated : item
         ))));
+        closeModal();
       } catch (error) {
-        if (previousItem) {
-          setAppointments((prev) => sortAppointments(prev.map((item) => (
-            item.id === editingAppointmentId ? previousItem : item
-          ))));
+        if (isAppointmentConflictError(error)) {
+          showAppointmentConflictAlert();
+          return;
         }
 
-        Alert.alert('Erro', error.response?.data?.error || 'Não foi possível atualizar agendamento.');
+        Alert.alert('Erro', getAppointmentErrorMessage(error, 'Não foi possível atualizar agendamento.'));
+      } finally {
+        setSubmitting(false);
       }
 
       return;
     }
 
-    const tempId = `temp-${Date.now()}`;
-    const optimisticItem = buildOptimisticAppointment({ id: tempId, status: 'scheduled' });
-
-    setAppointments((prev) => sortAppointments([...prev, optimisticItem]));
-    closeModal();
-
     try {
       const created = await createAppointment(payload);
-      setAppointments((prev) => sortAppointments(prev.map((item) => (
-        item.id === tempId ? created : item
-      ))));
+      setAppointments((prev) => sortAppointments([...prev, created]));
+      closeModal();
     } catch (error) {
-      setAppointments((prev) => prev.filter((item) => item.id !== tempId));
-      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível criar agendamento.');
+      if (isAppointmentConflictError(error)) {
+        showAppointmentConflictAlert();
+        return;
+      }
+
+      Alert.alert('Erro', getAppointmentErrorMessage(error, 'Não foi possível criar agendamento.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -416,10 +639,6 @@ const AgendaScreen = () => {
     }
   };
 
-  const handleSuggestionPress = (slotIso) => {
-    setForm((prev) => ({ ...prev, startAt: new Date(slotIso) }));
-  };
-
   const renderAppointmentItem = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardHeaderRow}>
@@ -430,7 +649,25 @@ const AgendaScreen = () => {
       </View>
 
       <Text style={styles.cardTitle}>{item.clientName || 'Cliente'}</Text>
-      <Text style={styles.cardSubtitle}>{item.serviceName || 'Serviço'}</Text>
+      <Text style={styles.cardSubtitle}>{getAppointmentServiceName(item) || 'Serviço'}</Text>
+      {googleSyncLabels[item.googleSyncStatus] && (
+        <View style={[
+          styles.googleSyncBadge,
+          { borderColor: googleSyncColors[item.googleSyncStatus] || colors.border },
+        ]}>
+          <Ionicons
+            name={item.googleSyncStatus === 'failed' ? 'cloud-offline-outline' : 'cloud-done-outline'}
+            size={13}
+            color={googleSyncColors[item.googleSyncStatus] || colors.darkGray}
+          />
+          <Text style={[
+            styles.googleSyncBadgeText,
+            { color: googleSyncColors[item.googleSyncStatus] || colors.darkGray },
+          ]}>
+            {googleSyncLabels[item.googleSyncStatus]}
+          </Text>
+        </View>
+      )}
       <Text style={styles.cardPrice}>{formatCurrency(item.price)}</Text>
 
       <View style={styles.cardActions}>
@@ -528,22 +765,38 @@ const AgendaScreen = () => {
           data={appointments}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderAppointmentItem}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[styles.listContainer, { paddingBottom: 96 + bottomInset }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={openCreateModal}>
+      <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
+      <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingTop: 14 + insets.top, paddingBottom: 14 + bottomInset }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>{isEditing ? 'Editar agendamento' : 'Novo agendamento'}</Text>
 
               <Text style={styles.fieldLabel}>Cliente</Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={18} color={colors.darkGray} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar cliente"
+                  value={clientSearch}
+                  onChangeText={setClientSearch}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+                {clientSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setClientSearch('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.darkGray} />
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.chipsWrap}>
                 {clients.map((client) => {
                   const isActive = Number(form.clientId) === Number(client.id);
@@ -551,7 +804,10 @@ const AgendaScreen = () => {
                     <TouchableOpacity
                       key={client.id}
                       style={[styles.chip, isActive && styles.chipActive]}
-                      onPress={() => setForm((prev) => ({ ...prev, clientId: client.id }))}
+                      onPress={() => {
+                        setSelectedClientOption(client);
+                        setForm((prev) => ({ ...prev, clientId: client.id }));
+                      }}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
                         {client.name} {client.lastName || ''}
@@ -559,19 +815,34 @@ const AgendaScreen = () => {
                     </TouchableOpacity>
                   );
                 })}
+                {clientSearchLoading && (
+                  <Text style={styles.helperText}>Buscando...</Text>
+                )}
+                {!clientSearchLoading && !clientSearch.trim() && clients.length === 0 && (
+                  <Text style={styles.helperText}>Digite para buscar uma cliente.</Text>
+                )}
+                {!clientSearchLoading && clientSearch.trim() && clients.length === 0 && (
+                  <Text style={styles.helperText}>Nenhum cliente encontrado.</Text>
+                )}
               </View>
 
-              <Text style={styles.fieldLabel}>Serviço</Text>
+              <Text style={styles.fieldLabel}>Serviços</Text>
               <View style={styles.chipsWrap}>
                 {services.map((service) => {
-                  const isActive = Number(form.serviceId) === Number(service.id);
+                  const isActive = form.serviceIds.some((serviceId) => Number(serviceId) === Number(service.id));
                   return (
                     <TouchableOpacity
                       key={service.id}
                       style={[styles.chip, isActive && styles.chipActive]}
-                      onPress={async () => {
-                        setForm((prev) => ({ ...prev, serviceId: service.id }));
-                        await loadSuggestions(service.id, editingAppointmentId);
+                      onPress={() => {
+                        const nextServiceIds = isActive
+                          ? form.serviceIds.filter((serviceId) => Number(serviceId) !== Number(service.id))
+                          : [...form.serviceIds, service.id];
+
+                        setForm((prev) => ({
+                          ...prev,
+                          serviceIds: nextServiceIds,
+                        }));
                       }}
                     >
                       <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
@@ -581,50 +852,68 @@ const AgendaScreen = () => {
                   );
                 })}
               </View>
+              {selectedServices.length > 0 && (
+                <Text style={styles.selectionSummary}>
+                  {selectedServices.length} serviço(s) - {selectedServicesTotal.estimatedTime} min - {formatCurrency(selectedServicesTotal.price)}
+                </Text>
+              )}
 
-              <Text style={styles.fieldLabel}>Horário</Text>
-              <TouchableOpacity style={styles.inputLike} onPress={() => setShowStartPicker(true)}>
-                <Text style={styles.inputLikeText}>{formatDateTimeLabel(form.startAt)}</Text>
-              </TouchableOpacity>
+              <Text style={styles.fieldLabel}>Sinal</Text>
+              <View style={styles.depositCompact}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.depositOptions}
+                >
+                  {DEPOSIT_PERCENT_OPTIONS.map((percent) => {
+                    const isActive = Number(form.depositPercent) === percent;
+
+                    return (
+                      <TouchableOpacity
+                        key={percent}
+                        style={[styles.depositOption, isActive && styles.depositOptionActive]}
+                        onPress={() => setForm((prev) => ({ ...prev, depositPercent: percent }))}
+                      >
+                        <Text style={[styles.depositOptionText, isActive && styles.depositOptionTextActive]}>
+                          {percent}%
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.depositSummary}>
+                  <Text style={styles.depositSummaryText}>
+                    Valor do sinal: {formatCurrency(selectedDepositAmount)}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Data e horário</Text>
+              <View style={styles.dateTimeRow}>
+                <TouchableOpacity style={styles.dateTimeButton} onPress={() => openStartPicker('date')}>
+                  <View style={styles.dateTimeButtonHeader}>
+                    <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                    <Text style={styles.dateTimeButtonLabel}>Data</Text>
+                  </View>
+                  <Text style={styles.dateTimeButtonValue}>{formatShortDate(form.startAt)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dateTimeButton} onPress={() => openStartPicker('time')}>
+                  <View style={styles.dateTimeButtonHeader}>
+                    <Ionicons name="time-outline" size={16} color={colors.primary} />
+                    <Text style={styles.dateTimeButtonLabel}>Horário</Text>
+                  </View>
+                  <Text style={styles.dateTimeButtonValue}>{formatTime(form.startAt)}</Text>
+                </TouchableOpacity>
+              </View>
 
               {showStartPicker && (
                 <DateTimePicker
                   value={form.startAt}
-                  mode="datetime"
+                  mode={startPickerMode}
                   display="default"
-                  onChange={(event, pickedDate) => {
-                    setShowStartPicker(false);
-                    if (pickedDate) {
-                      setForm((prev) => ({ ...prev, startAt: pickedDate }));
-                    }
-                  }}
+                  onChange={handleStartPickerChange}
                 />
               )}
-
-              <Text style={styles.fieldLabel}>Sugestões de horário livre</Text>
-              <View style={styles.chipsWrap}>
-                {suggestedSlots.slice(0, 10).map((slot) => (
-                  <TouchableOpacity
-                    key={slot.startAt}
-                    style={styles.suggestionChip}
-                    onPress={() => handleSuggestionPress(slot.startAt)}
-                  >
-                    <Text style={styles.suggestionText}>{formatTime(slot.startAt)}</Text>
-                  </TouchableOpacity>
-                ))}
-                {suggestedSlots.length === 0 && (
-                  <Text style={styles.helperText}>Sem sugestões para esta combinação.</Text>
-                )}
-              </View>
-
-              <Text style={styles.fieldLabel}>Sinal (opcional)</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="Ex.: 30"
-                value={form.depositAmount}
-                onChangeText={(value) => setForm((prev) => ({ ...prev, depositAmount: value.replace(/[^0-9.,]/g, '') }))}
-              />
 
               <Text style={styles.fieldLabel}>Observações (opcional)</Text>
               <TextInput
@@ -651,6 +940,14 @@ const AgendaScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={submitting} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#ECACD1" />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -671,6 +968,20 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.darkGray,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  loadingBox: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -762,6 +1073,21 @@ const styles = StyleSheet.create({
     color: colors.darkGray,
     marginTop: 2,
   },
+  googleSyncBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  googleSyncBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   cardPrice: {
     color: colors.primary,
     fontSize: 16,
@@ -840,28 +1166,42 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'flex-end',
+    backgroundColor: colors.white,
   },
   modalContent: {
+    flex: 1,
     backgroundColor: colors.white,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-    maxHeight: '88%',
+    paddingHorizontal: 14,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   fieldLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 8,
-    marginTop: 8,
+    marginBottom: 6,
+    marginTop: 7,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    backgroundColor: colors.white,
+    marginBottom: 6,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    paddingVertical: 8,
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -872,8 +1212,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 999,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     backgroundColor: colors.white,
   },
   chipActive: {
@@ -888,41 +1228,92 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
-  suggestionChip: {
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-  },
-  suggestionText: {
+  selectionSummary: {
+    marginTop: 6,
     color: colors.primary,
-    fontWeight: '700',
     fontSize: 12,
+    fontWeight: '700',
   },
-  inputLike: {
+  depositCompact: {
+    marginBottom: 2,
+  },
+  depositOptions: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 2,
+  },
+  depositOption: {
+    minWidth: 48,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    backgroundColor: colors.white,
+  },
+  depositOptionActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  depositOptionText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  depositOptionTextActive: {
+    color: colors.white,
+  },
+  depositSummary: {
+    marginTop: 6,
+  },
+  depositSummaryText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dateTimeButton: {
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
     backgroundColor: colors.white,
+    minHeight: 62,
+    justifyContent: 'center',
   },
-  inputLikeText: {
+  dateTimeButtonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  dateTimeButtonLabel: {
+    color: colors.darkGray,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dateTimeButtonValue: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '700',
   },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     backgroundColor: colors.white,
     color: colors.text,
   },
   notesInput: {
-    minHeight: 80,
+    minHeight: 64,
     textAlignVertical: 'top',
   },
   helperText: {
@@ -932,13 +1323,13 @@ const styles = StyleSheet.create({
   modalButtonsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 18,
-    marginBottom: 8,
+    marginTop: 14,
+    marginBottom: 4,
   },
   modalButton: {
     flex: 1,
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 11,
     alignItems: 'center',
   },
   primaryButton: {
@@ -960,4 +1351,3 @@ const styles = StyleSheet.create({
 });
 
 export default AgendaScreen;
-

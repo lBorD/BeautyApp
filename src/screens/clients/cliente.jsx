@@ -7,6 +7,7 @@ import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
+import { isSessionExpiredError } from '../../services/sessionManager';
 import { validateFormData } from '../../utils/validations';
 import { formatDate } from '../../utils/formatBirthday';
 
@@ -59,7 +60,9 @@ const ClientScreen = () => {
       setClients(clientList);
     } catch (error) {
       console.error("❌ Erro ao buscar clientes:", error);
-      Alert.alert('Erro', 'Não foi possível carregar os clientes.');
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível carregar os clientes.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

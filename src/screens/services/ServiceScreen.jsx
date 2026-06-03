@@ -6,6 +6,7 @@ import { listServices, deleteService } from '../../services/private/serviceAPI';
 import Button from '../../components/button';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
+import { isSessionExpiredError } from '../../services/sessionManager';
 
 const ServiceScreen = () => {
   const navigation = useNavigation();
@@ -41,7 +42,9 @@ const ServiceScreen = () => {
       setFilteredServices(data.services || []);
     } catch (error) {
       console.error('Erro ao buscar serviços:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os serviços');
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível carregar os serviços');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

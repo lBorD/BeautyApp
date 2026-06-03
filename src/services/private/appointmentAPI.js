@@ -22,19 +22,3 @@ export const updateAppointmentStatus = async (id, status) => {
   const response = await api.patch(`/appointments/${id}/status`, { status });
   return response.data;
 };
-
-export const getAppointmentSuggestions = async ({ from, to, serviceId, excludeAppointmentId }) => {
-  const params = {
-    from,
-    to,
-    serviceId,
-  };
-
-  if (excludeAppointmentId) {
-    params.excludeAppointmentId = excludeAppointmentId;
-  }
-
-  const response = await api.get('/appointments/suggestions', { params });
-  return response.data;
-};
-
