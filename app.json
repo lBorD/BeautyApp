@@ -2,7 +2,8 @@
   "expo": {
     "name": "BeautyApp",
     "slug": "beautyapp",
-    "version": "1.0.0",
+    "scheme": "com.bordd.beautyapp",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "splash": {
@@ -18,6 +19,7 @@
       "**/*"
     ],
     "extra": {
+      "googleOAuthClientId": "403403579982-9o20rr67s428gcn943pmi099adk98mor.apps.googleusercontent.com",
       "eas": {
         "projectId": "7c60982a-a18b-40b0-a5f6-196f47884cb2"
       }
@@ -36,7 +38,8 @@
     "ios": {},
     "plugins": [
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-web-browser"
     ]
   }
 }

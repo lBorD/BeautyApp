@@ -28,11 +28,13 @@ Prioridades permanentes:
 
 A navegação principal deve ser fixa e mínima.
 
-- Barra inferior com 4 abas:
+- Barra inferior com 4 abas operacionais principais:
   - Agenda
   - Clientes
   - Serviços
   - Financeiro
+
+- Exceção: a aba `Configurações` pode continuar como uma quinta aba utilitária para logout, preferências e ajustes de conta. Ela não deve competir com os fluxos principais nem virar um módulo pesado.
 
 Evitar menus escondidos, pilhas complexas e navegação excessiva.
 
@@ -59,7 +61,6 @@ Evitar sobrecarregar a profissional com memória, cálculos e decisões repetiti
 Aplicar sempre:
 - sinal/custo padrão já definido
 - duração automática por serviço
-- sugestão de horário sugerido
 - menos digitação possível
 
 ### Interface minimalista
@@ -97,10 +98,12 @@ Evitar lógica espalhada entre telas. Regras de negócio devem ficar centralizad
 ## Prioridades de desenvolvimento
 
 1. fluxo de agendamento
-2. cálculo automático de sinal
-3. integração com Google Calendar
-4. métricas básicas de faturamento
+2. estabilidade de autenticação, clientes e serviços
+3. melhorias de velocidade e clareza na agenda
+4. integração com Google Calendar
 5. lembretes automáticos
+
+Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 30% do valor total, por agendamento, ajustável por seletor de percentual e sem configuração por serviço.
 
 Evitar funcionalidades complexas antes da validação de uso real do fluxo principal.
 

@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, TextInput, StyleSheet, Alert, Image, ActivityIndicator, Modal } from 'react-native';
 import validator from 'validator';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -128,11 +128,6 @@ const LoginScreen = () => {
         <View style={styles.button}>
           <Button title={isLoading ? 'Entrando...' : 'Entrar'} onPress={handleLogin} disabled={isLoading} />
         </View>
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#ECACD1" />
-          </View>
-        )}
         <View style={styles.button}>
           <Button
             title="Esqueci minha senha"
@@ -140,6 +135,14 @@ const LoginScreen = () => {
           />
         </View>
       </View>
+
+      <Modal visible={isLoading} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#ECACD1" />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -162,10 +165,19 @@ const styles = StyleSheet.create({
     marginTop: -10,
     borderRadius: 8,
   },
-  loadingContainer: {
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    marginTop: -2,
-    marginBottom: 8,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  loadingBox: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   logo: {
     width: 250,
@@ -176,4 +188,3 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
-

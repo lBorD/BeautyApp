@@ -3,8 +3,8 @@ import { getAuthToken } from './authStorage';
 import { createSessionExpiredError, logout } from './sessionManager';
 
 const api = axios.create({
-  // baseURL: process.env.EXPO_PUBLIC_API_URL || 'https://api-h1hk.onrender.com',
-  baseURL: 'https://71ac-160-20-207-85.ngrok-free.app',
+  baseURL: 'https://api-h1hk.onrender.com',
+  // baseURL: 'https://280e-160-20-207-85.ngrok-free.app',
   timeout: 40000,
   headers: {
     'Content-Type': 'application/json',
