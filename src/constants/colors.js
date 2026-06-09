@@ -1,6 +1,6 @@
 const colors = {
-  primary: 'rgba(255, 105, 180, 1)',
-  secondary: 'rgba(203, 118, 163, 0.76)',
+  primary: 'rgba(165, 133, 102, 1)',
+  secondary: 'rgba(45, 28, 20, 1)',
   background: 'rgba(255, 255, 255, 1)',
   text: 'rgba(51, 51, 51, 1)',
   accent: 'rgba(255, 20, 147, 1)',

@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -33,6 +34,7 @@ const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 30;
 const DEPOSIT_PERCENT_OPTIONS = [10, 15, 20, 25, 30, 35, 40, 45];
+const HIDDEN_CANCELED_APPOINTMENTS_KEY = 'hiddenCanceledAppointmentIds';
 
 const statusLabels = {
   scheduled: 'Agendado',
@@ -61,6 +63,33 @@ const googleSyncColors = {
 const sortAppointments = (items) => [...items].sort(
   (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
 );
+
+const getHiddenCanceledAppointmentIds = async () => {
+  try {
+    const storedIds = await AsyncStorage.getItem(HIDDEN_CANCELED_APPOINTMENTS_KEY);
+    const parsedIds = storedIds ? JSON.parse(storedIds) : [];
+
+    return Array.isArray(parsedIds) ? parsedIds.map(String) : [];
+  } catch (error) {
+    console.error('Erro ao carregar agendamentos ocultos:', error);
+    return [];
+  }
+};
+
+const hideCanceledAppointmentLocally = async (appointmentId) => {
+  const hiddenIds = await getHiddenCanceledAppointmentIds();
+  const nextHiddenIds = Array.from(new Set([...hiddenIds, String(appointmentId)]));
+
+  await AsyncStorage.setItem(HIDDEN_CANCELED_APPOINTMENTS_KEY, JSON.stringify(nextHiddenIds));
+};
+
+const filterHiddenCanceledAppointments = (items, hiddenIds) => {
+  const hiddenIdsSet = new Set(hiddenIds.map(String));
+
+  return items.filter((item) => (
+    item.status !== 'canceled' || !hiddenIdsSet.has(String(item.id))
+  ));
+};
 
 const getAppointmentServices = (appointment) => {
   if (Array.isArray(appointment.services) && appointment.services.length > 0) {
@@ -357,7 +386,9 @@ const AgendaScreen = () => {
     try {
       const { from, to } = buildDayUtcRange(selectedDate);
       const data = await listAppointments({ from, to });
-      setAppointments(sortAppointments(data));
+      const hiddenCanceledAppointmentIds = await getHiddenCanceledAppointmentIds();
+      const visibleAppointments = filterHiddenCanceledAppointments(data, hiddenCanceledAppointmentIds);
+      setAppointments(sortAppointments(visibleAppointments));
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
       if (!isSessionExpiredError(error)) {
@@ -639,12 +670,51 @@ const AgendaScreen = () => {
     }
   };
 
+  const handleRemoveCanceledAppointment = (appointment) => {
+    if (appointment.status !== 'canceled') {
+      return;
+    }
+
+    Alert.alert(
+      'Excluir agendamento?',
+      'Este agendamento será removido da agenda. No backend ele continuará cancelado.',
+      [
+        { text: 'Manter', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await hideCanceledAppointmentLocally(appointment.id);
+              setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
+            } catch (error) {
+              console.error('Erro ao remover agendamento cancelado da agenda:', error);
+              Alert.alert('Erro', 'Não foi possível remover este agendamento da agenda.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderAppointmentItem = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardHeaderRow}>
         <Text style={styles.cardTime}>{formatTime(item.startAt)} - {formatTime(item.endAt)}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] || colors.darkGray }]}> 
-          <Text style={styles.statusBadgeText}>{statusLabels[item.status] || item.status}</Text>
+        <View style={styles.cardHeaderActions}>
+          <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] || colors.darkGray }]}>
+            <Text style={styles.statusBadgeText}>{statusLabels[item.status] || item.status}</Text>
+          </View>
+          {item.status === 'canceled' && (
+            <TouchableOpacity
+              style={styles.removeCanceledButton}
+              onPress={() => handleRemoveCanceledAppointment(item)}
+              accessibilityRole="button"
+              accessibilityLabel="Excluir agendamento cancelado da agenda"
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.darkGray} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -1048,6 +1118,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  cardHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   cardTime: {
     color: colors.text,
     fontWeight: '700',
@@ -1063,6 +1138,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  removeCanceledButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
   },
   cardTitle: {
     fontSize: 16,
