@@ -1,1 +1,3 @@
 *.pbxproj -text
+.nvmrc text eol=lf
+.tool-versions text eol=lf
