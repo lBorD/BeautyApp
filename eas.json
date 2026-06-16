@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "node": "18.20.6",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
@@ -17,6 +18,7 @@
       "channel": "development"
     },
     "preview": {
+      "node": "18.20.6",
       "android": {
         "buildType": "apk"
       }

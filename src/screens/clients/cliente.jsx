@@ -166,7 +166,7 @@ const ClientScreen = () => {
     </View>
   );
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#0000ff" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color={colors.primary} />;
 
   return (
     <View style={styles.container}>

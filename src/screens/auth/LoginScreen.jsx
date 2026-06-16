@@ -7,6 +7,7 @@ import api from '../../services/api';
 import { setAuthToken } from '../../services/authStorage';
 import Button from '../../components/button';
 import Toggle from '../../components/toggle';
+import colors from '../../constants/colors';
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -100,7 +101,7 @@ const LoginScreen = () => {
     <View style={styles.container}>
       <View style={styles.content}>
         <Image
-          source={require('../../assets/adaptative-icon.png')}
+          source={require('../../assets/icon.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -139,7 +140,7 @@ const LoginScreen = () => {
       <Modal visible={isLoading} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#ECACD1" />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         </View>
       </Modal>
@@ -155,7 +156,7 @@ const styles = StyleSheet.create({
   },
   input: {
     height: 50,
-    borderColor: '#ECACD1cf',
+    borderColor: colors.secondary,
     borderWidth: 2,
     marginBottom: 12,
     paddingHorizontal: 8,
