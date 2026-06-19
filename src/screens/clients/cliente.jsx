@@ -3,7 +3,8 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshCont
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { getClients, removeClientLocally } from '../../services/private/listClient';
-import Button from '../../components/button';
+import HeaderAddButton from '../../components/HeaderAddButton';
+import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
@@ -87,6 +88,7 @@ const ClientScreen = () => {
 
       const clientToUpdate = {
         ...editedClient,
+        email: editedClient.email.trim() || null,
         birthDate: formatDate(editedClient.birthDate)
       };
 
@@ -155,7 +157,7 @@ const ClientScreen = () => {
       <View style={styles.clientInfo}>
         <Text style={styles.title}>Nome: {item.name} {item.lastName}</Text>
         <Text>Telefone: {item.phone}</Text>
-        <Text>Email: {item.email}</Text>
+        {item.email ? <Text>Email: {item.email}</Text> : null}
       </View>
       <TouchableOpacity
         style={styles.editButton}
@@ -170,34 +172,33 @@ const ClientScreen = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={colors.text} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar cliente..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
+      <View style={styles.header}>
+        <Text style={styles.screenTitle}>Clientes</Text>
+        <HeaderAddButton
+          accessibilityLabel="Novo Cliente"
+          onPress={() => navigation.navigate('RegisterCustomer')}
         />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={colors.text} />
-          </TouchableOpacity>
-        )}
       </View>
 
-      <FlatList
-        data={filteredClients}
-        renderItem={renderClientItem}
-        keyExtractor={item => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={fetchClients} />
-        }
-      />
+      <View style={styles.searchContainer}>
+        <SearchInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Buscar cliente..."
+        />
+      </View>
 
-      <Button style={styles.button}
-        title="Novo Cliente"
-        onPress={() => navigation.navigate('RegisterCustomer')}
-      />
+      <View style={styles.listArea}>
+        <FlatList
+          data={filteredClients}
+          renderItem={renderClientItem}
+          keyExtractor={item => item.id.toString()}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={fetchClients} />
+          }
+        />
+      </View>
 
       {/* MODAL DE EDIÇÃO DE CLIENTE */}
       <Modal
@@ -248,12 +249,12 @@ const ClientScreen = () => {
                 keyboardType="phone-pad"
               />
 
-              <Text style={styles.inputLabel}>Email</Text>
+              <Text style={styles.inputLabel}>Email (opcional)</Text>
               <TextInput
                 style={styles.input}
                 value={editedClient.email}
                 onChangeText={(text) => setEditedClient({ ...editedClient, email: text })}
-                placeholder="Email"
+                placeholder="Email (opcional)"
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -310,8 +311,31 @@ const ClientScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    paddingTop: 50
+    paddingTop: 50,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  screenTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 15,
+  },
+  listArea: {
+    flex: 1,
+  },
+  listContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   item: {
     backgroundColor: colors.white,
@@ -330,10 +354,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  button: {
-    alignSelf: 'center',
-    marginVertical: 10,
   },
   editButton: {
     padding: 8,

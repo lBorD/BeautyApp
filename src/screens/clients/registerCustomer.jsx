@@ -28,7 +28,8 @@ export default function RegisterClientScreeen() {
 
   const handleInputChange = (field, value) => {
     if (field === 'email') {
-      setIsValidEmail(validator.isEmail(value));
+      const trimmedEmail = value.trim();
+      setIsValidEmail(!trimmedEmail || validator.isEmail(trimmedEmail));
     }
     setFormData({
       ...formData,
@@ -51,6 +52,7 @@ export default function RegisterClientScreeen() {
   const handleRegister = async () => {
     const clientToRegister = {
       ...formData,
+      email: formData.email.trim() || null,
       birthDate: formatDate(formData.birthDate)
     };
     if (!validateFormData(clientToRegister)) {
@@ -89,6 +91,8 @@ export default function RegisterClientScreeen() {
       }
     }
   };
+  const hasEmail = formData.email.trim().length > 0;
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.formContainer}>
@@ -115,13 +119,13 @@ export default function RegisterClientScreeen() {
         <TextInput
           style={styles.input}
           mode="outlined"
-          right={<TextInput.Affix text={
+          right={hasEmail ? <TextInput.Affix text={
             isValidEmail ?
               <FontAwesome name="check-circle" size={20} color="green" /> :
               <FontAwesome name="times-circle" size={20} color="red" />
           }
-            accessibilityLabel={isValidEmail ? 'E-mail válido' : 'E-mail inválido'} />}
-          label="Email"
+            accessibilityLabel={isValidEmail ? 'E-mail válido' : 'E-mail inválido'} /> : null}
+          label="Email (opcional)"
           keyboardType="email-address"
           textContentType="emailAddress"
           value={formData.email}
