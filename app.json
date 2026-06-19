@@ -35,7 +35,12 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "ios": {},
+    "ios": {
+      "bundleIdentifier": "com.bordd.beautyapp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
     "plugins": [
       "expo-font",
       "expo-asset",

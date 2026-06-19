@@ -21,6 +21,11 @@
       "node": "18.20.6",
       "android": {
         "buildType": "apk"
+      },
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": {
+        "simulator": false
       }
     },
     "production": {
