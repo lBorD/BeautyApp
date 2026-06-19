@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, TextInput, ScrollView } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { getClients, removeClientLocally } from '../../services/private/listClient';
+import FeedbackModal from '../../components/FeedbackModal';
 import HeaderAddButton from '../../components/HeaderAddButton';
 import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
@@ -11,6 +13,7 @@ import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import { validateFormData } from '../../utils/validations';
 import { formatDate } from '../../utils/formatBirthday';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 const ClientScreen = () => {
   const navigation = useNavigation();
@@ -21,6 +24,7 @@ const ClientScreen = () => {
   const [selectedClient, setSelectedClient] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredClients, setFilteredClients] = useState([]);
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const [editedClient, setEditedClient] = useState({
     name: '',
     lastName: '',
@@ -62,7 +66,11 @@ const ClientScreen = () => {
     } catch (error) {
       console.error("❌ Erro ao buscar clientes:", error);
       if (!isSessionExpiredError(error)) {
-        Alert.alert('Erro', 'Não foi possível carregar os clientes.');
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Não foi possível carregar os clientes.',
+        });
       }
     } finally {
       setLoading(false);
@@ -105,14 +113,26 @@ const ClientScreen = () => {
         );
 
         setClients(updatedClients);
-        Alert.alert('Sucesso', 'Cliente atualizado com sucesso!');
         setModalVisible(false);
+        showFeedback({
+          type: 'success',
+          title: 'Sucesso',
+          message: 'Cliente atualizado com sucesso!',
+        });
       } else {
-        Alert.alert('Erro', 'Não foi possível atualizar o cliente. ', response.data.message);
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: response.data.message || 'Não foi possível atualizar o cliente.',
+        });
       }
     } catch (error) {
       console.error("❌ Erro ao atualizar cliente:", error.response?.data || error.message);
-      Alert.alert('Erro', 'Não foi possível atualizar o cliente.');
+      showFeedback({
+        type: 'error',
+        title: 'Erro',
+        message: 'Não foi possível atualizar o cliente.',
+      });
     }
   };
 
@@ -134,10 +154,18 @@ const ClientScreen = () => {
               const updatedClients = clients.filter(c => c.id !== client.id);
               setClients(updatedClients);
 
-              Alert.alert('Sucesso', 'Cliente excluído com sucesso!');
+              showFeedback({
+                type: 'success',
+                title: 'Sucesso',
+                message: 'Cliente excluído com sucesso!',
+              });
             } catch (error) {
               console.error("❌ Erro ao excluir cliente:", error);
-              Alert.alert('Erro', 'Não foi possível excluir o cliente.');
+              showFeedback({
+                type: 'error',
+                title: 'Erro',
+                message: 'Não foi possível excluir o cliente.',
+              });
             }
           }
         }
@@ -221,50 +249,58 @@ const ClientScreen = () => {
                     }, 300);
                   }}
                 >
-                  <Ionicons name="trash-outline" size={24} color={colors.danger} />
+                  <Ionicons name="trash-outline" size={24} color={colors.secondary} />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.inputLabel}>Nome</Text>
+
               <TextInput
                 style={styles.input}
+                mode="outlined"
+                label="Nome *"
                 value={editedClient.name}
                 onChangeText={(text) => setEditedClient({ ...editedClient, name: text })}
-                placeholder="Nome"
               />
 
-              <Text style={styles.inputLabel}>Sobrenome</Text>
               <TextInput
                 style={styles.input}
+                mode="outlined"
+                label="Sobrenome"
                 value={editedClient.lastName}
                 onChangeText={(text) => setEditedClient({ ...editedClient, lastName: text })}
-                placeholder="Sobrenome"
               />
 
-              <Text style={styles.inputLabel}>Telefone</Text>
               <TextInput
                 style={styles.input}
+                mode="outlined"
+                label="Telefone *"
                 value={editedClient.phone}
                 onChangeText={(text) => setEditedClient({ ...editedClient, phone: text })}
-                placeholder="Telefone"
                 keyboardType="phone-pad"
               />
 
-              <Text style={styles.inputLabel}>Email (opcional)</Text>
               <TextInput
                 style={styles.input}
+                mode="outlined"
+                label="Email (opcional)"
                 value={editedClient.email}
                 onChangeText={(text) => setEditedClient({ ...editedClient, email: text })}
-                placeholder="Email (opcional)"
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
 
-              <Text style={styles.inputLabel}>Data de Nascimento</Text>
               <TouchableOpacity
-                style={styles.datePickerButton}
+                activeOpacity={0.7}
                 onPress={() => setShowDatePicker(true)}
               >
-                <Text>{formatDate(editedClient.birthDate)}</Text>
+                <TextInput
+                  style={styles.input}
+                  mode="outlined"
+                  label="Data de Nascimento *"
+                  editable={false}
+                  value={formatDate(editedClient.birthDate)}
+                  right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
+                  pointerEvents="none"
+                />
               </TouchableOpacity>
 
               {showDatePicker && (
@@ -276,14 +312,16 @@ const ClientScreen = () => {
                 />
               )}
 
-              <Text style={styles.inputLabel}>Endereço</Text>
               <TextInput
                 style={[styles.input, styles.addressInput]}
+                mode="outlined"
+                label="Endereço"
                 value={editedClient.address}
                 onChangeText={(text) => setEditedClient({ ...editedClient, address: text })}
-                placeholder="Endereço"
                 multiline
               />
+
+              <Text style={styles.helperText}>* Campos obrigatórios</Text>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
@@ -304,6 +342,15 @@ const ClientScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
     </View>
   );
 };
@@ -362,7 +409,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.overlay,
     padding: 18,
   },
   modalContent: {
@@ -383,31 +430,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.primary,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 5,
-    color: colors.text,
-  },
   input: {
-    borderWidth: 1,
-    borderColor: colors.shadow,
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
-    backgroundColor: colors.white,
+    height: 50,
+    marginBottom: 5,
+    fontSize: 16,
   },
   addressInput: {
     height: 80,
     textAlignVertical: 'top',
   },
-  datePickerButton: {
-    borderWidth: 1,
-    borderColor: colors.shadow,
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
-    backgroundColor: colors.white,
+  helperText: {
+    color: colors.darkGray,
+    fontSize: 12,
+    marginBottom: 20,
+    marginLeft: 5,
+    fontStyle: 'italic',
   },
   modalButtons: {
     flexDirection: 'row',

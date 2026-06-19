@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { TextInput } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Button from '../../components/button';
+import FeedbackModal from '../../components/FeedbackModal';
 import { updateService } from '../../services/private/serviceAPI';
 import colors from '../../constants/colors';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function EditServiceScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { service } = route.params;
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -123,98 +126,112 @@ export default function EditServiceScreen() {
     console.log('Dados do serviço a serem atualizados:', serviceToUpdate);
 
     try {
-      const response = await updateService(service.id, serviceToUpdate);
+      await updateService(service.id, serviceToUpdate);
 
-      Alert.alert(
-        "Sucesso",
-        "Serviço atualizado com sucesso!",
-        [
-          { 
-            text: "OK", 
-            onPress: () => {
-              navigation.goBack();
-              // Força atualização da lista ao voltar
-              if (route.params?.onUpdate) {
-                route.params.onUpdate();
-              }
-            }
+      showFeedback({
+        type: 'success',
+        title: 'Sucesso',
+        message: 'Serviço atualizado com sucesso!',
+        onClose: () => {
+          navigation.goBack();
+          if (route.params?.onUpdate) {
+            route.params.onUpdate();
           }
-        ]
-      );
+        },
+      });
     } catch (error) {
       if (error.response) {
         console.error('Erro ao atualizar serviço:', error.response.data);
-        Alert.alert("Erro", error.response.data.error || "Erro ao atualizar serviço");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: error.response.data.error || 'Erro ao atualizar serviço',
+        });
       } else {
         console.error('Erro ao atualizar serviço:', error.message);
-        Alert.alert("Erro", "Falha na conexão com o servidor");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Falha na conexão com o servidor',
+        });
       }
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>Editar Serviço</Text>
+    <>
+      <ScrollView style={styles.container}>
+        <View style={styles.formContainer}>
+          <Text style={styles.title}>Editar Serviço</Text>
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Nome do Serviço *"
-          value={formData.name}
-          onChangeText={(value) => handleInputChange('name', value)}
-          error={!!errors.name}
-        />
-        {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Nome do Serviço *"
+            value={formData.name}
+            onChangeText={(value) => handleInputChange('name', value)}
+            error={!!errors.name}
+          />
+          {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Preço (R$) *"
-          value={formData.price}
-          keyboardType="numeric"
-          onChangeText={handlePriceChange}
-          error={!!errors.price}
-          left={<TextInput.Affix text="R$" />}
-        />
-        {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Preço (R$) *"
+            value={formData.price}
+            keyboardType="numeric"
+            onChangeText={handlePriceChange}
+            error={!!errors.price}
+            left={<TextInput.Affix text="R$" />}
+          />
+          {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Tempo Estimado (minutos) *"
-          value={formData.estimatedTime}
-          keyboardType="numeric"
-          onChangeText={handleTimeChange}
-          error={!!errors.estimatedTime}
-          right={<TextInput.Affix text="min" />}
-        />
-        {errors.estimatedTime ? <Text style={styles.errorText}>{errors.estimatedTime}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Tempo Estimado (minutos) *"
+            value={formData.estimatedTime}
+            keyboardType="numeric"
+            onChangeText={handleTimeChange}
+            error={!!errors.estimatedTime}
+            right={<TextInput.Affix text="min" />}
+          />
+          {errors.estimatedTime ? <Text style={styles.errorText}>{errors.estimatedTime}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Custo (R$)"
-          value={formData.cost}
-          keyboardType="numeric"
-          onChangeText={handleCostChange}
-          error={!!errors.cost}
-          left={<TextInput.Affix text="R$" />}
-        />
-        {errors.cost ? <Text style={styles.errorText}>{errors.cost}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Custo (R$)"
+            value={formData.cost}
+            keyboardType="numeric"
+            onChangeText={handleCostChange}
+            error={!!errors.cost}
+            left={<TextInput.Affix text="R$" />}
+          />
+          {errors.cost ? <Text style={styles.errorText}>{errors.cost}</Text> : null}
 
-        <Text style={styles.helperText}>* Campos obrigatórios</Text>
+          <Text style={styles.helperText}>* Campos obrigatórios</Text>
 
-        <Button
-          title="Atualizar"
-          onPress={handleUpdate}
-        />
-        <Button
-          title="Cancelar"
-          onPress={() => navigation.goBack()}
-        />
-      </View>
-    </ScrollView>
+          <Button
+            title="Atualizar"
+            onPress={handleUpdate}
+          />
+          <Button
+            title="Cancelar"
+            onPress={() => navigation.goBack()}
+          />
+        </View>
+      </ScrollView>
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
+    </>
   );
 }
 

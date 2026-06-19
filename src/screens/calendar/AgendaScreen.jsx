@@ -215,6 +215,7 @@ const AgendaScreen = () => {
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [selectedClientOption, setSelectedClientOption] = useState(null);
   const [services, setServices] = useState([]);
+  const [serviceSearch, setServiceSearch] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -242,6 +243,21 @@ const AgendaScreen = () => {
       .filter(Boolean),
     [services, form.serviceIds],
   );
+
+  const searchedServiceOptions = useMemo(() => {
+    const normalizedSearch = serviceSearch.trim().toLowerCase();
+    return normalizedSearch
+      ? services.filter((service) => service.name?.toLowerCase().includes(normalizedSearch))
+      : [];
+  }, [serviceSearch, services]);
+
+  const serviceOptions = useMemo(() => {
+    const selectedNotInResults = selectedServices.filter((selectedService) => (
+      !searchedServiceOptions.some((service) => Number(service.id) === Number(selectedService.id))
+    ));
+
+    return [...selectedNotInResults, ...searchedServiceOptions];
+  }, [searchedServiceOptions, selectedServices]);
 
   const selectedServicesTotal = useMemo(
     () => calculateServicesTotal(selectedServices),
@@ -424,6 +440,7 @@ const AgendaScreen = () => {
 
   const openCreateModal = async () => {
     setClientSearch('');
+    setServiceSearch('');
     setClients([]);
     setSelectedClientOption(null);
     const hasClients = await loadClientAvailability();
@@ -443,7 +460,7 @@ const AgendaScreen = () => {
     setEditingAppointmentId(null);
     setForm({
       clientId: null,
-      serviceIds: [services[0].id],
+      serviceIds: [],
       startAt: defaultStartAt,
       depositPercent: DEFAULT_DEPOSIT_PERCENT,
       notes: '',
@@ -456,6 +473,7 @@ const AgendaScreen = () => {
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
     setClientSearch('');
+    setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
     const appointmentClient = {
       id: appointment.clientId,
@@ -483,6 +501,7 @@ const AgendaScreen = () => {
     setStartPickerMode('date');
     setSubmitting(false);
     setClientSearch('');
+    setServiceSearch('');
     setClientSearchLoading(false);
   };
 
@@ -872,9 +891,25 @@ const AgendaScreen = () => {
                 )}
               </View>
 
-              <Text style={styles.fieldLabel}>Serviços</Text>
+              <Text style={styles.fieldLabel}>Procedimento</Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={18} color={colors.darkGray} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar procedimento"
+                  value={serviceSearch}
+                  onChangeText={setServiceSearch}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+                {serviceSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setServiceSearch('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.darkGray} />
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.chipsWrap}>
-                {services.map((service) => {
+                {serviceOptions.map((service) => {
                   const isActive = form.serviceIds.some((serviceId) => Number(serviceId) === Number(service.id));
                   return (
                     <TouchableOpacity
@@ -897,6 +932,12 @@ const AgendaScreen = () => {
                     </TouchableOpacity>
                   );
                 })}
+                {!serviceSearch.trim() && selectedServices.length === 0 && (
+                  <Text style={styles.helperText}>Digite para buscar um procedimento.</Text>
+                )}
+                {serviceSearch.trim() && searchedServiceOptions.length === 0 && (
+                  <Text style={styles.helperText}>Nenhum procedimento encontrado.</Text>
+                )}
               </View>
               {selectedServices.length > 0 && (
                 <Text style={styles.selectionSummary}>
