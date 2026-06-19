@@ -8,6 +8,30 @@
 
 ---
 
+### **Passo rapido iOS (Ad Hoc / preview)**
+
+1. Entre na pasta do app:
+   ```bash
+   cd BeautyApp
+   ```
+2. Autentique no EAS, se ainda nao estiver logado:
+   ```bash
+   npx eas login
+   ```
+3. Registre o iPhone da beta tester(Precisa rodar esse comando, abrir o link gerado e instalar o perfil no IOS):
+   ```bash
+   npx eas device:create 
+   ```
+4. Gere a build iOS interna:
+   ```bash
+   npx eas build --platform ios --profile preview
+   ```
+5. Abra o link da build no iPhone e instale.
+6. Para ajustes futuros que nao mexam no binario, publique no mesmo channel:
+   ```bash
+   npx eas update --channel preview --message "ajuste"
+   ```
+
 ### **Passos Essenciais**
 
 #### **1. Gerar o AAB**

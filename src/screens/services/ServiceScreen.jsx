@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, TextInput as RNTextInput, ScrollView } from 'react-native';
-import { TextInput } from 'react-native-paper';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { listServices, deleteService } from '../../services/private/serviceAPI';
 import Button from '../../components/button';
+import HeaderAddButton from '../../components/HeaderAddButton';
+import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { isSessionExpiredError } from '../../services/sessionManager';
@@ -134,48 +135,45 @@ const ServiceScreen = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Serviços</Text>
-        <TouchableOpacity
-          style={styles.addButton}
+        <HeaderAddButton
+          accessibilityLabel="Novo Serviço"
           onPress={() => navigation.navigate('RegisterService')}
-        >
-          <Ionicons name="add-circle" size={40} color={colors.primary} />
-        </TouchableOpacity>
+        />
       </View>
 
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          mode="outlined"
-          placeholder="Buscar serviço..."
+        <SearchInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          left={<TextInput.Icon icon="magnify" />}
+          placeholder="Buscar serviço..."
         />
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-      ) : (
-        <FlatList
-          data={filteredServices}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderServiceItem}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[colors.primary]}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="briefcase-outline" size={64} color={colors.lightGray} />
-              <Text style={styles.emptyText}>Nenhum serviço cadastrado</Text>
-            </View>
-          }
-        />
-      )}
+      <View style={styles.listArea}>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+        ) : (
+          <FlatList
+            data={filteredServices}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderServiceItem}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[colors.primary]}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="briefcase-outline" size={64} color={colors.lightGray} />
+                <Text style={styles.emptyText}>Nenhum serviço cadastrado</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
 
       <Modal
         animationType="slide"
@@ -264,15 +262,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.text,
   },
-  addButton: {
-    padding: 5,
-  },
   searchContainer: {
     paddingHorizontal: 20,
-    marginBottom: 15,
+    marginBottom: 12,
   },
-  searchInput: {
-    backgroundColor: colors.white,
+  listArea: {
+    flex: 1,
   },
   listContainer: {
     paddingHorizontal: 20,
