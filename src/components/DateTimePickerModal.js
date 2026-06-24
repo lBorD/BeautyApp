@@ -491,6 +491,7 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.transparent,
   },
   dayCellDisabled: {
     opacity: 0.35,
@@ -498,12 +499,14 @@ const styles = StyleSheet.create({
   dayNumberCircle: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   dayNumberCircleSelected: {
     backgroundColor: colors.primary,
+    borderRadius: 999,
   },
   dayText: {
     color: colors.text,
