@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
+import DateTimePickerModal from '../../components/DateTimePickerModal';
 import FeedbackModal from '../../components/FeedbackModal';
 import api from '../../services/api';
 import formatPhoneNumber from '../../utils/formatNumber';
@@ -38,7 +38,7 @@ export default function RegisterClientScreeen() {
     handleInputChange('phone', formattedPhone);
   };
 
-  const handleDateChange = (event, selectedDate) => {
+  const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
       setFormData({ ...formData, birthDate: selectedDate });
@@ -150,19 +150,6 @@ export default function RegisterClientScreeen() {
             />
           </TouchableOpacity>
 
-          {showDatePicker && (
-            <DateTimePicker
-              value={
-                formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
-                  ? formData.birthDate
-                  : new Date()
-              }
-              mode="date"
-              display="default"
-              onChange={handleDateChange}
-            />
-          )}
-
           <TextInput
             style={styles.input}
             mode="outlined"
@@ -183,6 +170,20 @@ export default function RegisterClientScreeen() {
           />
         </View>
       </ScrollView>
+
+      <DateTimePickerModal
+        visible={showDatePicker}
+        value={
+          formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
+            ? formData.birthDate
+            : new Date()
+        }
+        mode="date"
+        title="Data de nascimento"
+        iosDisplay="spinner"
+        onCancel={() => setShowDatePicker(false)}
+        onConfirm={handleDateConfirm}
+      />
 
       <FeedbackModal
         visible={feedback.visible}

@@ -14,6 +14,7 @@
     "build:apk": "eas build --platform android --profile apk",
     "build:ios": "eas build --platform ios",
     "build:dev": "eas build --profile development --no-build-cache --platform android",
+    "update:preview": "npx eas update --channel preview --message 'ajuste'",
     "update:dev": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch development --message \"Update development\"",
     "update:prod": "npx cross-env EXPO_USE_EAS_UPDATES=1 eas update --branch production --message \"Update production\""
   },

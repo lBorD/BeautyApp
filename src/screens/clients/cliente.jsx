@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { getClients, removeClientLocally } from '../../services/private/listClient';
+import DateTimePickerModal from '../../components/DateTimePickerModal';
 import FeedbackModal from '../../components/FeedbackModal';
 import HeaderAddButton from '../../components/HeaderAddButton';
 import SearchInput from '../../components/SearchInput';
@@ -173,7 +173,7 @@ const ClientScreen = () => {
     );
   };
 
-  const handleDateChange = (event, selectedDate) => {
+  const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
       setEditedClient({ ...editedClient, birthDate: selectedDate });
@@ -303,15 +303,6 @@ const ClientScreen = () => {
                 />
               </TouchableOpacity>
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={editedClient.birthDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={handleDateChange}
-                />
-              )}
-
               <TextInput
                 style={[styles.input, styles.addressInput]}
                 mode="outlined"
@@ -342,6 +333,16 @@ const ClientScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <DateTimePickerModal
+        visible={showDatePicker}
+        value={editedClient.birthDate || new Date()}
+        mode="date"
+        title="Data de nascimento"
+        iosDisplay="spinner"
+        onCancel={() => setShowDatePicker(false)}
+        onConfirm={handleDateConfirm}
+      />
 
       <FeedbackModal
         visible={feedback.visible}
