@@ -93,6 +93,7 @@ const DateTimePickerModal = ({
   maximumDate,
   minuteInterval,
   useAppPicker = false,
+  inlineSheet = false,
   onCancel,
   onConfirm,
 }) => {
@@ -281,6 +282,82 @@ const DateTimePickerModal = ({
     </View>
   );
 
+  const sheetContent = (
+    <>
+      <TouchableOpacity
+        style={styles.backdropPressable}
+        activeOpacity={1}
+        onPress={onCancel}
+        accessibilityRole="button"
+        accessibilityLabel="Fechar seletor"
+      />
+
+      <View
+        style={[
+          styles.sheet,
+          inlineSheet && styles.inlineSheet,
+          { paddingBottom: 18 + Math.max(insets.bottom, 6) },
+        ]}
+      >
+        <View style={styles.grabber} />
+
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onCancel} hitSlop={10}>
+            <Text style={styles.cancelText}>{cancelText}</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.title}>{title}</Text>
+
+          <TouchableOpacity
+            onPress={() => onConfirm?.(draftValue)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={confirmText}
+          >
+            <Text style={styles.confirmText}>{confirmText}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View
+          style={[
+            styles.pickerCard,
+            (resolvedIosDisplay === 'spinner' || useAppPicker) && styles.spinnerPickerCard,
+          ]}
+        >
+          {useAppPicker ? (
+            mode === 'time' ? renderAppTimePicker() : renderAppDatePicker()
+          ) : (
+            <DateTimePicker
+              value={draftValue}
+              mode={mode}
+              display={resolvedIosDisplay}
+              minimumDate={minimumDate}
+              maximumDate={maximumDate}
+              minuteInterval={minuteInterval}
+              onChange={(_event, selectedDate) => {
+                if (selectedDate) {
+                  setDraftValue(selectedDate);
+                }
+              }}
+              style={[
+                styles.iosPicker,
+                resolvedIosDisplay === 'spinner' && styles.spinnerPicker,
+              ]}
+            />
+          )}
+        </View>
+      </View>
+    </>
+  );
+
+  if (inlineSheet) {
+    return (
+      <View style={styles.inlineOverlay}>
+        {sheetContent}
+      </View>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -290,63 +367,7 @@ const DateTimePickerModal = ({
       onRequestClose={onCancel}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity
-          style={styles.backdropPressable}
-          activeOpacity={1}
-          onPress={onCancel}
-          accessibilityRole="button"
-          accessibilityLabel="Fechar seletor"
-        />
-
-        <View style={[styles.sheet, { paddingBottom: 18 + Math.max(insets.bottom, 6) }]}>
-          <View style={styles.grabber} />
-
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onCancel} hitSlop={10}>
-              <Text style={styles.cancelText}>{cancelText}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.title}>{title}</Text>
-
-            <TouchableOpacity
-              onPress={() => onConfirm?.(draftValue)}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel={confirmText}
-            >
-              <Text style={styles.confirmText}>{confirmText}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View
-            style={[
-              styles.pickerCard,
-              (resolvedIosDisplay === 'spinner' || useAppPicker) && styles.spinnerPickerCard,
-            ]}
-          >
-            {useAppPicker ? (
-              mode === 'time' ? renderAppTimePicker() : renderAppDatePicker()
-            ) : (
-              <DateTimePicker
-                value={draftValue}
-                mode={mode}
-                display={resolvedIosDisplay}
-                minimumDate={minimumDate}
-                maximumDate={maximumDate}
-                minuteInterval={minuteInterval}
-                onChange={(_event, selectedDate) => {
-                  if (selectedDate) {
-                    setDraftValue(selectedDate);
-                  }
-                }}
-                style={[
-                  styles.iosPicker,
-                  resolvedIosDisplay === 'spinner' && styles.spinnerPicker,
-                ]}
-              />
-            )}
-          </View>
-        </View>
+        {sheetContent}
       </View>
     </Modal>
   );
@@ -357,6 +378,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
+  },
+  inlineOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+    zIndex: 20,
+    elevation: 20,
   },
   backdropPressable: {
     ...StyleSheet.absoluteFillObject,
@@ -373,6 +401,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 12,
     elevation: 10,
+  },
+  inlineSheet: {
+    maxHeight: '94%',
   },
   grabber: {
     alignSelf: 'center',

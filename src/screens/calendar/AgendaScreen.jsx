@@ -1160,20 +1160,21 @@ const AgendaScreen = () => {
               </View>
             </ScrollView>
           </View>
+
+          <DateTimePickerModal
+            visible={showStartPicker}
+            value={form.startAt}
+            mode={startPickerMode}
+            title={startPickerMode === 'date' ? 'Data do agendamento' : 'Horário do agendamento'}
+            iosDisplay={startPickerMode === 'date' ? 'inline' : 'spinner'}
+            minuteInterval={5}
+            useAppPicker
+            inlineSheet
+            onCancel={handleStartPickerCancel}
+            onConfirm={handleStartPickerConfirm}
+          />
         </View>
       </Modal>
-
-      <DateTimePickerModal
-        visible={showStartPicker}
-        value={form.startAt}
-        mode={startPickerMode}
-        title={startPickerMode === 'date' ? 'Data do agendamento' : 'Horário do agendamento'}
-        iosDisplay={startPickerMode === 'date' ? 'inline' : 'spinner'}
-        minuteInterval={5}
-        useAppPicker
-        onCancel={handleStartPickerCancel}
-        onConfirm={handleStartPickerConfirm}
-      />
 
       <FeedbackModal
         visible={feedback.visible}
@@ -1430,6 +1431,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: colors.white,
+    position: 'relative',
   },
   modalContent: {
     flex: 1,
