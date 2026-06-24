@@ -1,13 +1,16 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Alert, Image, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, Image, ActivityIndicator, Modal } from 'react-native';
 import validator from 'validator';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import appPackage from '../../../package.json';
 import api from '../../services/api';
 import { setAuthToken } from '../../services/authStorage';
 import Button from '../../components/button';
 import Toggle from '../../components/toggle';
 import colors from '../../constants/colors';
+
+const APP_VERSION = appPackage.version || '0.0.0';
 
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
@@ -137,6 +140,8 @@ const LoginScreen = () => {
         </View>
       </View>
 
+      <Text style={styles.versionText}>v{APP_VERSION}</Text>
+
       <Modal visible={isLoading} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>
@@ -185,6 +190,14 @@ const styles = StyleSheet.create({
     height: 250,
     alignSelf: 'center',
     marginBottom: -50,
+  },
+  versionText: {
+    position: 'absolute',
+    bottom: 18,
+    alignSelf: 'center',
+    color: colors.darkGray,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
