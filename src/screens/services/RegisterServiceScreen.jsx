@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
+import FeedbackModal from '../../components/FeedbackModal';
 import { registerService } from '../../services/private/serviceAPI';
 import colors from '../../constants/colors';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function RegisterServiceScreen() {
   const navigation = useNavigation();
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -105,101 +108,118 @@ export default function RegisterServiceScreen() {
       const response = await registerService(serviceToRegister);
 
       if (response.success) {
-        Alert.alert(
-          "Sucesso",
-          "Serviço cadastrado com sucesso!",
-          [
-            { text: "OK", onPress: () => navigation.goBack() }
-          ]
-        );
-
         setFormData({
           name: '',
           price: '',
           estimatedTime: '',
           cost: ''
         });
+        showFeedback({
+          type: 'success',
+          title: 'Sucesso',
+          message: 'Serviço cadastrado com sucesso!',
+          onClose: () => navigation.goBack(),
+        });
       } else {
-        Alert.alert(
-          "Erro",
-          "Não foi possível cadastrar o serviço!",
-          [{ text: "OK" }]
-        );
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Não foi possível cadastrar o serviço!',
+        });
       }
     } catch (error) {
       if (error.response) {
         console.error('Erro ao registrar serviço:', error.response.data);
-        Alert.alert("Erro", error.response.data.error || "Erro ao cadastrar serviço");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: error.response.data.error || 'Erro ao cadastrar serviço',
+        });
       } else {
         console.error('Erro ao registrar serviço:', error.message);
-        Alert.alert("Erro", "Falha na conexão com o servidor");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Falha na conexão com o servidor',
+        });
       }
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>Cadastro de Serviço</Text>
+    <>
+      <ScrollView style={styles.container}>
+        <View style={styles.formContainer}>
+          <Text style={styles.title}>Cadastro de Serviço</Text>
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Nome do Serviço *"
-          value={formData.name}
-          onChangeText={(value) => handleInputChange('name', value)}
-          error={!!errors.name}
-        />
-        {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Nome do Serviço *"
+            value={formData.name}
+            onChangeText={(value) => handleInputChange('name', value)}
+            error={!!errors.name}
+          />
+          {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Preço (R$) *"
-          value={formData.price}
-          keyboardType="numeric"
-          onChangeText={handlePriceChange}
-          error={!!errors.price}
-          left={<TextInput.Affix text="R$" />}
-        />
-        {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Preço (R$) *"
+            value={formData.price}
+            keyboardType="numeric"
+            onChangeText={handlePriceChange}
+            error={!!errors.price}
+            left={<TextInput.Affix text="R$" />}
+          />
+          {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Tempo Estimado (minutos) *"
-          value={formData.estimatedTime}
-          keyboardType="numeric"
-          onChangeText={handleTimeChange}
-          error={!!errors.estimatedTime}
-          right={<TextInput.Affix text="min" />}
-        />
-        {errors.estimatedTime ? <Text style={styles.errorText}>{errors.estimatedTime}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Tempo Estimado (minutos) *"
+            value={formData.estimatedTime}
+            keyboardType="numeric"
+            onChangeText={handleTimeChange}
+            error={!!errors.estimatedTime}
+            right={<TextInput.Affix text="min" />}
+          />
+          {errors.estimatedTime ? <Text style={styles.errorText}>{errors.estimatedTime}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Custo (R$)"
-          value={formData.cost}
-          keyboardType="numeric"
-          onChangeText={handleCostChange}
-          error={!!errors.cost}
-          left={<TextInput.Affix text="R$" />}
-        />
-        {errors.cost ? <Text style={styles.errorText}>{errors.cost}</Text> : null}
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Custo (R$)"
+            value={formData.cost}
+            keyboardType="numeric"
+            onChangeText={handleCostChange}
+            error={!!errors.cost}
+            left={<TextInput.Affix text="R$" />}
+          />
+          {errors.cost ? <Text style={styles.errorText}>{errors.cost}</Text> : null}
 
-        <Text style={styles.helperText}>* Campos obrigatórios</Text>
+          <Text style={styles.helperText}>* Campos obrigatórios</Text>
 
-        <Button
-          title="Cadastrar"
-          onPress={handleRegister}
-        />
-        <Button
-          title="Voltar"
-          onPress={() => navigation.goBack()}
-        />
-      </View>
-    </ScrollView>
+          <Button
+            title="Cadastrar"
+            onPress={handleRegister}
+          />
+          <Button
+            title="Voltar"
+            onPress={() => navigation.goBack()}
+          />
+        </View>
+      </ScrollView>
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
+    </>
   );
 }
 

@@ -3,11 +3,13 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshCont
 import { useNavigation } from '@react-navigation/native';
 import { listServices, deleteService } from '../../services/private/serviceAPI';
 import Button from '../../components/button';
+import FeedbackModal from '../../components/FeedbackModal';
 import HeaderAddButton from '../../components/HeaderAddButton';
 import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { isSessionExpiredError } from '../../services/sessionManager';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 const ServiceScreen = () => {
   const navigation = useNavigation();
@@ -18,6 +20,7 @@ const ServiceScreen = () => {
   const [selectedService, setSelectedService] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState([]);
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
 
   useEffect(() => {
     fetchServices();
@@ -44,7 +47,11 @@ const ServiceScreen = () => {
     } catch (error) {
       console.error('Erro ao buscar serviços:', error);
       if (!isSessionExpiredError(error)) {
-        Alert.alert('Erro', 'Não foi possível carregar os serviços');
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Não foi possível carregar os serviços',
+        });
       }
     } finally {
       setLoading(false);
@@ -85,12 +92,20 @@ const ServiceScreen = () => {
           onPress: async () => {
             try {
               await deleteService(id);
-              Alert.alert('Sucesso', 'Serviço excluído com sucesso');
               setModalVisible(false);
               fetchServices();
+              showFeedback({
+                type: 'success',
+                title: 'Sucesso',
+                message: 'Serviço excluído com sucesso',
+              });
             } catch (error) {
               console.error('Erro ao excluir serviço:', error);
-              Alert.alert('Erro', 'Não foi possível excluir o serviço');
+              showFeedback({
+                type: 'error',
+                title: 'Erro',
+                message: 'Não foi possível excluir o serviço',
+              });
             }
           },
         },
@@ -240,6 +255,15 @@ const ServiceScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
     </View>
   );
 };

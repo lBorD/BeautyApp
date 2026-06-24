@@ -4,7 +4,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,11 +12,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePickerModal from '../../components/DateTimePickerModal';
+import FeedbackModal from '../../components/FeedbackModal';
 import colors from '../../constants/colors';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -32,7 +33,7 @@ const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 30;
-const DEPOSIT_PERCENT_OPTIONS = [0, 15, 20, 25, 30, 35, 40];
+const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
 
 const statusLabels = {
   scheduled: 'Agendado',
@@ -144,18 +145,54 @@ const calculateDepositAmount = (price = 0, percent = DEFAULT_DEPOSIT_PERCENT) =>
   roundCurrency((Number(price || 0) * Number(percent || 0)) / 100)
 );
 
+const formatCurrencyInput = (value = 0) => roundCurrency(value).toLocaleString('pt-BR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const sanitizeCurrencyInput = (value = '') => String(value).replace(/[^\d.,]/g, '');
+
+const parseCurrencyInput = (value = '') => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? roundCurrency(value) : null;
+  }
+
+  const sanitizedValue = sanitizeCurrencyInput(value);
+  if (!sanitizedValue) {
+    return 0;
+  }
+
+  const lastComma = sanitizedValue.lastIndexOf(',');
+  const lastDot = sanitizedValue.lastIndexOf('.');
+  const normalizedValue = lastComma > lastDot
+    ? sanitizedValue.replace(/\./g, '').replace(',', '.')
+    : sanitizedValue.replace(/,/g, '');
+  const parsedValue = Number(normalizedValue);
+
+  return Number.isFinite(parsedValue) ? roundCurrency(parsedValue) : null;
+};
+
+const calculateRemainingAmount = (price = 0, depositAmount = 0) => {
+  const total = Math.max(Number(price || 0), 0);
+  const deposit = Math.max(Number(depositAmount || 0), 0);
+  return roundCurrency(Math.max(total - deposit, 0));
+};
+
+const isSameCurrencyAmount = (firstValue = 0, secondValue = 0) => (
+  Math.abs(roundCurrency(firstValue) - roundCurrency(secondValue)) < 0.01
+);
+
 const inferDepositPercent = (depositAmount = 0, price = 0) => {
   const numericPrice = Number(price || 0);
   const numericDeposit = Number(depositAmount || 0);
 
   if (!numericPrice || !Number.isFinite(numericPrice) || !Number.isFinite(numericDeposit)) {
-    return DEFAULT_DEPOSIT_PERCENT;
+    return null;
   }
 
-  const currentPercent = (numericDeposit / numericPrice) * 100;
-  return DEPOSIT_PERCENT_OPTIONS.reduce((closest, option) => (
-    Math.abs(option - currentPercent) < Math.abs(closest - currentPercent) ? option : closest
-  ), DEFAULT_DEPOSIT_PERCENT);
+  return DEPOSIT_PERCENT_OPTIONS.find((option) => (
+    isSameCurrencyAmount(calculateDepositAmount(numericPrice, option), numericDeposit)
+  )) ?? null;
 };
 
 const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
@@ -204,6 +241,7 @@ const createBaseSlots = (date) => {
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
@@ -215,6 +253,7 @@ const AgendaScreen = () => {
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [selectedClientOption, setSelectedClientOption] = useState(null);
   const [services, setServices] = useState([]);
+  const [serviceSearch, setServiceSearch] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -231,6 +270,9 @@ const AgendaScreen = () => {
     serviceIds: [],
     startAt: new Date(),
     depositPercent: DEFAULT_DEPOSIT_PERCENT,
+    depositAmount: 0,
+    depositAmountInput: formatCurrencyInput(0),
+    depositMode: 'percent',
     notes: '',
   });
 
@@ -243,14 +285,34 @@ const AgendaScreen = () => {
     [services, form.serviceIds],
   );
 
+  const searchedServiceOptions = useMemo(() => {
+    const normalizedSearch = serviceSearch.trim().toLowerCase();
+    return normalizedSearch
+      ? services.filter((service) => service.name?.toLowerCase().includes(normalizedSearch))
+      : [];
+  }, [serviceSearch, services]);
+
+  const serviceOptions = useMemo(() => {
+    const selectedNotInResults = selectedServices.filter((selectedService) => (
+      !searchedServiceOptions.some((service) => Number(service.id) === Number(selectedService.id))
+    ));
+
+    return [...selectedNotInResults, ...searchedServiceOptions];
+  }, [searchedServiceOptions, selectedServices]);
+
   const selectedServicesTotal = useMemo(
     () => calculateServicesTotal(selectedServices),
     [selectedServices],
   );
 
   const selectedDepositAmount = useMemo(
-    () => calculateDepositAmount(selectedServicesTotal.price, form.depositPercent),
-    [form.depositPercent, selectedServicesTotal.price],
+    () => roundCurrency(Number(form.depositAmount || 0)),
+    [form.depositAmount],
+  );
+
+  const selectedRemainingAmount = useMemo(
+    () => calculateRemainingAmount(selectedServicesTotal.price, selectedDepositAmount),
+    [selectedDepositAmount, selectedServicesTotal.price],
   );
 
   const applyClientOptions = (nextClients) => {
@@ -417,6 +479,31 @@ const AgendaScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalVisible, clientSearch]);
 
+  useEffect(() => {
+    if (!modalVisible || form.depositMode !== 'percent') {
+      return;
+    }
+
+    const percent = form.depositPercent ?? DEFAULT_DEPOSIT_PERCENT;
+    const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
+    const nextDepositAmountInput = formatCurrencyInput(nextDepositAmount);
+
+    setForm((prev) => {
+      if (
+        isSameCurrencyAmount(prev.depositAmount, nextDepositAmount)
+        && prev.depositAmountInput === nextDepositAmountInput
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        depositAmount: nextDepositAmount,
+        depositAmountInput: nextDepositAmountInput,
+      };
+    });
+  }, [form.depositMode, form.depositPercent, modalVisible, selectedServicesTotal.price]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
@@ -424,6 +511,7 @@ const AgendaScreen = () => {
 
   const openCreateModal = async () => {
     setClientSearch('');
+    setServiceSearch('');
     setClients([]);
     setSelectedClientOption(null);
     const hasClients = await loadClientAvailability();
@@ -443,9 +531,12 @@ const AgendaScreen = () => {
     setEditingAppointmentId(null);
     setForm({
       clientId: null,
-      serviceIds: [services[0].id],
+      serviceIds: [],
       startAt: defaultStartAt,
       depositPercent: DEFAULT_DEPOSIT_PERCENT,
+      depositAmount: 0,
+      depositAmountInput: formatCurrencyInput(0),
+      depositMode: 'percent',
       notes: '',
     });
 
@@ -456,7 +547,10 @@ const AgendaScreen = () => {
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
     setClientSearch('');
+    setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
+    const appointmentDepositAmount = roundCurrency(Number(appointment.depositAmount || 0));
+    const appointmentDepositPercent = inferDepositPercent(appointmentDepositAmount, appointment.price);
     const appointmentClient = {
       id: appointment.clientId,
       name: appointment.clientName || 'Cliente',
@@ -470,7 +564,10 @@ const AgendaScreen = () => {
       clientId: appointment.clientId,
       serviceIds: appointmentServiceIds,
       startAt: new Date(appointment.startAt),
-      depositPercent: inferDepositPercent(appointment.depositAmount, appointment.price),
+      depositPercent: appointmentDepositPercent,
+      depositAmount: appointmentDepositAmount,
+      depositAmountInput: formatCurrencyInput(appointmentDepositAmount),
+      depositMode: appointmentDepositPercent === null ? 'manual' : 'percent',
       notes: appointment.notes || '',
     });
 
@@ -483,6 +580,7 @@ const AgendaScreen = () => {
     setStartPickerMode('date');
     setSubmitting(false);
     setClientSearch('');
+    setServiceSearch('');
     setClientSearchLoading(false);
   };
 
@@ -491,28 +589,13 @@ const AgendaScreen = () => {
     setShowStartPicker(true);
   };
 
-  const handleStartPickerChange = (event, pickedDate) => {
-    if (Platform.OS === 'android') {
-      setShowStartPicker(false);
-    }
-
-    if (event?.type === 'dismissed' || !pickedDate) {
-      if (Platform.OS === 'android') {
-        setStartPickerMode('date');
-      }
-      return;
-    }
-
+  const applyStartPickerValue = (pickedDate) => {
     if (startPickerMode === 'date') {
       setForm((prev) => {
         const nextStartAt = new Date(prev.startAt);
         nextStartAt.setFullYear(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
         return { ...prev, startAt: nextStartAt };
       });
-
-      if (Platform.OS === 'android') {
-        setStartPickerMode('date');
-      }
       return;
     }
 
@@ -521,9 +604,54 @@ const AgendaScreen = () => {
       nextStartAt.setHours(pickedDate.getHours(), pickedDate.getMinutes(), 0, 0);
       return { ...prev, startAt: nextStartAt };
     });
-    if (Platform.OS === 'android') {
-      setStartPickerMode('date');
-    }
+  };
+
+  const handleStartPickerConfirm = (pickedDate) => {
+    setShowStartPicker(false);
+    applyStartPickerValue(pickedDate);
+    setStartPickerMode('date');
+  };
+
+  const handleStartPickerCancel = () => {
+    setShowStartPicker(false);
+    setStartPickerMode('date');
+  };
+
+  const handleDepositPercentPress = (percent) => {
+    const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
+
+    setForm((prev) => ({
+      ...prev,
+      depositPercent: percent,
+      depositAmount: nextDepositAmount,
+      depositAmountInput: formatCurrencyInput(nextDepositAmount),
+      depositMode: 'percent',
+    }));
+  };
+
+  const handleDepositAmountChange = (value) => {
+    const sanitizedValue = sanitizeCurrencyInput(value);
+    const parsedDepositAmount = parseCurrencyInput(sanitizedValue);
+
+    setForm((prev) => ({
+      ...prev,
+      depositPercent: null,
+      depositAmount: parsedDepositAmount ?? 0,
+      depositAmountInput: sanitizedValue,
+      depositMode: 'manual',
+    }));
+  };
+
+  const handleDepositAmountBlur = () => {
+    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
+    const nextDepositAmount = Math.max(parsedDepositAmount ?? 0, 0);
+
+    setForm((prev) => ({
+      ...prev,
+      depositAmount: nextDepositAmount,
+      depositAmountInput: formatCurrencyInput(nextDepositAmount),
+      depositMode: 'manual',
+    }));
   };
 
   const hasLocalAppointmentConflict = () => {
@@ -548,11 +676,12 @@ const AgendaScreen = () => {
     });
   };
 
-  const showAppointmentConflictAlert = () => {
-    Alert.alert(
-      'Conflito de horário',
-      'Já existe outro agendamento nesse horário. Ajuste o horário e tente salvar novamente.',
-    );
+  const showAppointmentConflictFeedback = () => {
+    showFeedback({
+      type: 'error',
+      title: 'Conflito de horário',
+      message: 'Já existe outro agendamento neste mesmo horário. Ajuste a data ou o horário e tente novamente.',
+    });
   };
 
   const handleSaveAppointment = async () => {
@@ -565,23 +694,31 @@ const AgendaScreen = () => {
       return;
     }
 
-    const payload = {
-      clientId: form.clientId,
-      serviceIds: form.serviceIds,
-      startAt: form.startAt.toISOString(),
-      depositAmount: selectedDepositAmount,
-      notes: form.notes,
-    };
+    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
+    const finalDepositAmount = parsedDepositAmount === null ? null : roundCurrency(parsedDepositAmount);
 
-    if (!Number.isFinite(payload.depositAmount) || payload.depositAmount < 0) {
-      Alert.alert('Sinal inválido', 'Selecione uma porcentagem válida para o sinal.');
+    if (finalDepositAmount === null || !Number.isFinite(finalDepositAmount) || finalDepositAmount < 0) {
+      Alert.alert('Sinal inválido', 'Informe um valor de sinal válido.');
+      return;
+    }
+
+    if (finalDepositAmount > roundCurrency(selectedServicesTotal.price)) {
+      Alert.alert('Sinal inválido', 'O valor do sinal não pode ser maior que o valor total do agendamento.');
       return;
     }
 
     if (hasLocalAppointmentConflict()) {
-      showAppointmentConflictAlert();
+      showAppointmentConflictFeedback();
       return;
     }
+
+    const payload = {
+      clientId: form.clientId,
+      serviceIds: form.serviceIds,
+      startAt: form.startAt.toISOString(),
+      depositAmount: finalDepositAmount,
+      notes: form.notes,
+    };
 
     setSubmitting(true);
 
@@ -594,7 +731,7 @@ const AgendaScreen = () => {
         closeModal();
       } catch (error) {
         if (isAppointmentConflictError(error)) {
-          showAppointmentConflictAlert();
+          showAppointmentConflictFeedback();
           return;
         }
 
@@ -612,7 +749,7 @@ const AgendaScreen = () => {
       closeModal();
     } catch (error) {
       if (isAppointmentConflictError(error)) {
-        showAppointmentConflictAlert();
+        showAppointmentConflictFeedback();
         return;
       }
 
@@ -714,7 +851,13 @@ const AgendaScreen = () => {
           </Text>
         </View>
       )}
-      <Text style={styles.cardPrice}>{formatCurrency(item.price)}</Text>
+      <View style={styles.cardFinanceRow}>
+        <Text style={styles.cardFinanceText}>Total: {formatCurrency(item.price)}</Text>
+        <Text style={styles.cardFinanceText}>Sinal: {formatCurrency(item.depositAmount)}</Text>
+        <Text style={styles.cardFinanceText}>
+          Falta pagar: {formatCurrency(calculateRemainingAmount(item.price, item.depositAmount))}
+        </Text>
+      </View>
 
       <View style={styles.cardActions}>
         <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)}>
@@ -754,19 +897,18 @@ const AgendaScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {showDayPicker && (
-        <DateTimePicker
-          value={selectedDate}
-          mode="date"
-          display="default"
-          onChange={(event, pickedDate) => {
-            setShowDayPicker(false);
-            if (pickedDate) {
-              setSelectedDate(pickedDate);
-            }
-          }}
-        />
-      )}
+      <DateTimePickerModal
+        visible={showDayPicker}
+        value={selectedDate}
+        mode="date"
+        title="Escolher dia"
+        iosDisplay="inline"
+        onCancel={() => setShowDayPicker(false)}
+        onConfirm={(pickedDate) => {
+          setShowDayPicker(false);
+          setSelectedDate(pickedDate);
+        }}
+      />
 
       <View style={styles.summaryCard}>
         <View>
@@ -872,9 +1014,25 @@ const AgendaScreen = () => {
                 )}
               </View>
 
-              <Text style={styles.fieldLabel}>Serviços</Text>
+              <Text style={styles.fieldLabel}>Procedimento</Text>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={18} color={colors.darkGray} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar procedimento"
+                  value={serviceSearch}
+                  onChangeText={setServiceSearch}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+                {serviceSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setServiceSearch('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.darkGray} />
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.chipsWrap}>
-                {services.map((service) => {
+                {serviceOptions.map((service) => {
                   const isActive = form.serviceIds.some((serviceId) => Number(serviceId) === Number(service.id));
                   return (
                     <TouchableOpacity
@@ -897,6 +1055,12 @@ const AgendaScreen = () => {
                     </TouchableOpacity>
                   );
                 })}
+                {!serviceSearch.trim() && selectedServices.length === 0 && (
+                  <Text style={styles.helperText}>Digite para buscar um procedimento.</Text>
+                )}
+                {serviceSearch.trim() && searchedServiceOptions.length === 0 && (
+                  <Text style={styles.helperText}>Nenhum procedimento encontrado.</Text>
+                )}
               </View>
               {selectedServices.length > 0 && (
                 <Text style={styles.selectionSummary}>
@@ -912,13 +1076,13 @@ const AgendaScreen = () => {
                   contentContainerStyle={styles.depositOptions}
                 >
                   {DEPOSIT_PERCENT_OPTIONS.map((percent) => {
-                    const isActive = Number(form.depositPercent) === percent;
+                    const isActive = form.depositPercent !== null && Number(form.depositPercent) === percent;
 
                     return (
                       <TouchableOpacity
                         key={percent}
                         style={[styles.depositOption, isActive && styles.depositOptionActive]}
-                        onPress={() => setForm((prev) => ({ ...prev, depositPercent: percent }))}
+                        onPress={() => handleDepositPercentPress(percent)}
                       >
                         <Text style={[styles.depositOptionText, isActive && styles.depositOptionTextActive]}>
                           {percent}%
@@ -927,10 +1091,30 @@ const AgendaScreen = () => {
                     );
                   })}
                 </ScrollView>
-                <View style={styles.depositSummary}>
-                  <Text style={styles.depositSummaryText}>
-                    Valor do sinal: {formatCurrency(selectedDepositAmount)}
-                  </Text>
+                <View style={styles.depositInputRow}>
+                  <Text style={styles.depositInputPrefix}>R$</Text>
+                  <TextInput
+                    style={styles.depositInput}
+                    value={form.depositAmountInput}
+                    onChangeText={handleDepositAmountChange}
+                    onBlur={handleDepositAmountBlur}
+                    keyboardType="decimal-pad"
+                    placeholder="0,00"
+                  />
+                </View>
+                <View style={styles.depositSummaryGrid}>
+                  <View style={styles.depositSummaryItem}>
+                    <Text style={styles.depositSummaryLabel}>Valor total</Text>
+                    <Text style={styles.depositSummaryValue}>{formatCurrency(selectedServicesTotal.price)}</Text>
+                  </View>
+                  <View style={styles.depositSummaryItem}>
+                    <Text style={styles.depositSummaryLabel}>Valor do sinal</Text>
+                    <Text style={styles.depositSummaryValue}>{formatCurrency(selectedDepositAmount)}</Text>
+                  </View>
+                  <View style={styles.depositSummaryItem}>
+                    <Text style={styles.depositSummaryLabel}>Falta pagar</Text>
+                    <Text style={styles.depositSummaryValue}>{formatCurrency(selectedRemainingAmount)}</Text>
+                  </View>
                 </View>
               </View>
 
@@ -951,15 +1135,6 @@ const AgendaScreen = () => {
                   <Text style={styles.dateTimeButtonValue}>{formatTime(form.startAt)}</Text>
                 </TouchableOpacity>
               </View>
-
-              {showStartPicker && (
-                <DateTimePicker
-                  value={form.startAt}
-                  mode={startPickerMode}
-                  display="default"
-                  onChange={handleStartPickerChange}
-                />
-              )}
 
               <Text style={styles.fieldLabel}>Observações (opcional)</Text>
               <TextInput
@@ -986,6 +1161,25 @@ const AgendaScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <DateTimePickerModal
+        visible={showStartPicker}
+        value={form.startAt}
+        mode={startPickerMode}
+        title={startPickerMode === 'date' ? 'Data do agendamento' : 'Horário do agendamento'}
+        iosDisplay={startPickerMode === 'date' ? 'inline' : 'spinner'}
+        onCancel={handleStartPickerCancel}
+        onConfirm={handleStartPickerConfirm}
+      />
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
 
       <Modal visible={submitting} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.loadingOverlay}>
@@ -1149,11 +1343,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  cardPrice: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '700',
+  cardFinanceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     marginTop: 10,
+  },
+  cardFinanceText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardActions: {
     marginTop: 12,
@@ -1325,10 +1524,45 @@ const styles = StyleSheet.create({
   depositOptionTextActive: {
     color: colors.white,
   },
-  depositSummary: {
-    marginTop: 6,
+  depositInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    backgroundColor: colors.white,
+    minHeight: 42,
   },
-  depositSummaryText: {
+  depositInputPrefix: {
+    color: colors.darkGray,
+    fontSize: 13,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  depositInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    paddingVertical: 8,
+  },
+  depositSummaryGrid: {
+    marginTop: 8,
+    gap: 4,
+  },
+  depositSummaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  depositSummaryLabel: {
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  depositSummaryValue: {
     color: colors.primary,
     fontSize: 13,
     fontWeight: '800',

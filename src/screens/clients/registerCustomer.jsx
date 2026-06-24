@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { TextInput } from 'react-native-paper';
-import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
+import DateTimePickerModal from '../../components/DateTimePickerModal';
+import FeedbackModal from '../../components/FeedbackModal';
 import api from '../../services/api';
 import formatPhoneNumber from '../../utils/formatNumber';
 import { validateFormData } from '../../utils/validations';
-import validator from 'validator';
 import { formatDate } from '../../utils/formatBirthday';
 import colors from '../../constants/colors';
+import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
-  const [isValidEmail, setIsValidEmail] = useState(true);
+  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
@@ -27,10 +27,6 @@ export default function RegisterClientScreeen() {
 
 
   const handleInputChange = (field, value) => {
-    if (field === 'email') {
-      const trimmedEmail = value.trim();
-      setIsValidEmail(!trimmedEmail || validator.isEmail(trimmedEmail));
-    }
     setFormData({
       ...formData,
       [field]: value
@@ -42,7 +38,7 @@ export default function RegisterClientScreeen() {
     handleInputChange('phone', formattedPhone);
   };
 
-  const handleDateChange = (event, selectedDate) => {
+  const handleDateConfirm = (selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
       setFormData({ ...formData, birthDate: selectedDate });
@@ -65,138 +61,146 @@ export default function RegisterClientScreeen() {
       );
 
       if (response.data.success) {
-        Alert.alert(
-          "Sucesso",
-          "Cliente cadastrado com sucesso!",
-          [
-            { text: "OK", onPress: () => navigation.goBack() }
-          ]
-        );
+        showFeedback({
+          type: 'success',
+          title: 'Sucesso',
+          message: 'Cliente cadastrado com sucesso!',
+          onClose: () => navigation.goBack(),
+        });
       } else {
-        Alert.alert(
-          "Erro",
-          "Não foi possível cadastrar o cliente!",
-          [
-            { text: "OK" }
-          ]
-        );
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Não foi possível cadastrar o cliente!',
+        });
       }
     } catch (error) {
       if (error.response) {
         console.error('Erro ao registrar cliente:', error.response.data.message);
-        Alert.alert("Erro", error.response.data.error || "Erro ao cadastrar cliente");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: error.response.data.error || 'Erro ao cadastrar cliente',
+        });
       } else {
         console.error('Erro ao registrar cliente:', error.message);
-        Alert.alert("Erro", "Falha na conexão com o servidor");
+        showFeedback({
+          type: 'error',
+          title: 'Erro',
+          message: 'Falha na conexão com o servidor',
+        });
       }
     }
   };
-  const hasEmail = formData.email.trim().length > 0;
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>Cadastro de Cliente</Text>
+    <>
+      <ScrollView style={styles.container}>
+        <View style={styles.formContainer}>
+          <Text style={styles.title}>Cadastro de Cliente</Text>
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          label="Nome"
-          value={formData.name}
-          right={<TextInput.Affix />}
-          onChangeText={(value) => handleInputChange('name', value)}
-        />
-
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          right={<TextInput.Affix />}
-          label="Sobrenome"
-          value={formData.lastName}
-          onChangeText={(value) => handleInputChange('lastName', value)}
-        />
-
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          right={hasEmail ? <TextInput.Affix text={
-            isValidEmail ?
-              <FontAwesome name="check-circle" size={20} color="green" /> :
-              <FontAwesome name="times-circle" size={20} color="red" />
-          }
-            accessibilityLabel={isValidEmail ? 'E-mail válido' : 'E-mail inválido'} /> : null}
-          label="Email (opcional)"
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          value={formData.email}
-          onChangeText={(value) => handleInputChange('email', value)}
-        />
-
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          right={<TextInput.Affix />}
-          label="Telefone"
-          placeholder="+55"
-          keyboardType="phone-pad"
-          value={formData.phone}
-          onChangeText={handlePhoneChange}
-        />
-
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setShowDatePicker(true)}
-        >
-        <TextInput
-          style={styles.input}
+          <TextInput
+            style={styles.input}
             mode="outlined"
-            label="Data de Nascimento"
-            editable={false}
-            value={formData.birthDate instanceof Date ? formatDate(formData.birthDate) : ""}
-            right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
-            pointerEvents="none"
-        />
-        </TouchableOpacity>
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={
-              formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
-                ? formData.birthDate
-                : new Date()
-            }
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
+            label="Nome *"
+            value={formData.name}
+            onChangeText={(value) => handleInputChange('name', value)}
           />
-        )}
 
-        <TextInput
-          style={styles.input}
-          mode="outlined"
-          right={<TextInput.Affix />}
-          label="Endereço"
-          value={formData.address}
-          onChangeText={(value) => handleInputChange('address', value)}
-        />
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Sobrenome"
+            value={formData.lastName}
+            onChangeText={(value) => handleInputChange('lastName', value)}
+          />
 
-        <Button
-          title="Cadastrar"
-          onPress={handleRegister}
-        />
-        <Button
-          title="Voltar"
-          onPress={() => navigation.goBack()}
-        />
-      </View>
-    </ScrollView>
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Email (opcional)"
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            value={formData.email}
+            onChangeText={(value) => handleInputChange('email', value)}
+          />
+
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Telefone *"
+            placeholder="+55"
+            keyboardType="phone-pad"
+            value={formData.phone}
+            onChangeText={handlePhoneChange}
+          />
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <TextInput
+              style={styles.input}
+              mode="outlined"
+              label="Data de Nascimento *"
+              editable={false}
+              value={formData.birthDate instanceof Date ? formatDate(formData.birthDate) : ""}
+              right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
+              pointerEvents="none"
+            />
+          </TouchableOpacity>
+
+          <TextInput
+            style={styles.input}
+            mode="outlined"
+            label="Endereço"
+            value={formData.address}
+            onChangeText={(value) => handleInputChange('address', value)}
+          />
+
+          <Text style={styles.helperText}>* Campos obrigatórios</Text>
+
+          <Button
+            title="Cadastrar"
+            onPress={handleRegister}
+          />
+          <Button
+            title="Voltar"
+            onPress={() => navigation.goBack()}
+          />
+        </View>
+      </ScrollView>
+
+      <DateTimePickerModal
+        visible={showDatePicker}
+        value={
+          formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
+            ? formData.birthDate
+            : new Date()
+        }
+        mode="date"
+        title="Data de nascimento"
+        iosDisplay="spinner"
+        onCancel={() => setShowDatePicker(false)}
+        onConfirm={handleDateConfirm}
+      />
+
+      <FeedbackModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        buttonText={feedback.buttonText}
+        onClose={hideFeedback}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
     paddingTop: 50,
   },
   formContainer: {
@@ -207,37 +211,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
+    color: colors.text,
   },
   input: {
     height: 50,
-    marginBottom: 15,
+    marginBottom: 5,
     fontSize: 16,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 5,
-    color: colors.text,
+  helperText: {
+    color: colors.darkGray,
+    fontSize: 12,
+    marginBottom: 20,
+    marginLeft: 5,
+    fontStyle: 'italic',
   },
-  datePickerButton: {
-    borderWidth: 1,
-    borderColor: colors.shadow,
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
-    backgroundColor: colors.white,
-  },
-  button: {
-    backgroundColor: '#FF69B4',
-    height: 50,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 8,
-    marginBottom: 5
-  }
 });
