@@ -1,19 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Alert, RefreshControl, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+} from 'react-native';
 import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { getClients, removeClientLocally } from '../../services/private/listClient';
-import DateTimePickerModal from '../../components/DateTimePickerModal';
 import FeedbackModal from '../../components/FeedbackModal';
 import HeaderAddButton from '../../components/HeaderAddButton';
 import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
-import { Ionicons } from '@expo/vector-icons';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
+import formatPhoneNumber from '../../utils/formatNumber';
 import { validateFormData } from '../../utils/validations';
-import { formatDate } from '../../utils/formatBirthday';
+import { formatBirthDay, formatDate, formatDateForInput } from '../../utils/formatBirthday';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
+
+const getInitialEditedClient = () => ({
+  name: '',
+  lastName: '',
+  phone: '',
+  email: '',
+  birthDate: '',
+  address: '',
+});
+
+const hasOptionalClientInfo = (client) => Boolean(
+  client?.lastName
+  || client?.email
+  || client?.birthDate
+  || client?.address
+);
 
 const ClientScreen = () => {
   const navigation = useNavigation();
@@ -24,47 +51,42 @@ const ClientScreen = () => {
   const [selectedClient, setSelectedClient] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredClients, setFilteredClients] = useState([]);
+  const [editedClient, setEditedClient] = useState(getInitialEditedClient);
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
   const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
-  const [editedClient, setEditedClient] = useState({
-    name: '',
-    lastName: '',
-    phone: '',
-    email: '',
-    birthDate: new Date(),
-    address: ''
-  });
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     fetchClients();
   }, []);
+
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredClients(clients);
-    } else {
-      const query = searchQuery.toLowerCase();
-      const filtered = clients.filter(client =>
-      (client.name?.toLowerCase().includes(query) ||
-        client.lastName?.toLowerCase().includes(query) ||
-        client.phone?.includes(query) ||
-        client.email?.toLowerCase().includes(query))
-      );
-      setFilteredClients(filtered);
+      return;
     }
 
+    const query = searchQuery.toLowerCase();
+    const filtered = clients.filter((client) => (
+      client.name?.toLowerCase().includes(query)
+      || client.lastName?.toLowerCase().includes(query)
+      || client.phone?.includes(query)
+      || client.email?.toLowerCase().includes(query)
+    ));
+
+    setFilteredClients(filtered);
   }, [searchQuery, clients]);
 
   const fetchClients = async () => {
     try {
       setRefreshing(true);
-      console.log("🔄 Buscando clientes da API...");
+      console.log('Buscando clientes da API...');
 
       const clientList = await getClients();
-      console.log("✅ Clientes recebidos");
+      console.log('Clientes recebidos');
 
       setClients(clientList);
     } catch (error) {
-      console.error("❌ Erro ao buscar clientes:", error);
+      console.error('Erro ao buscar clientes:', error);
       if (!isSessionExpiredError(error)) {
         showFeedback({
           type: 'error',
@@ -78,6 +100,13 @@ const ClientScreen = () => {
     }
   };
 
+  const closeEditModal = () => {
+    setModalVisible(false);
+    setShowOptionalFields(false);
+    setSelectedClient(null);
+    setEditedClient(getInitialEditedClient());
+  };
+
   const handleEditClient = (client) => {
     setSelectedClient(client);
     setEditedClient({
@@ -85,35 +114,55 @@ const ClientScreen = () => {
       lastName: client.lastName || '',
       phone: client.phone || '',
       email: client.email || '',
-      birthDate: client.birthDate ? new Date(client.birthDate) : new Date(),
-      address: client.address || ''
+      birthDate: formatDateForInput(client.birthDate),
+      address: client.address || '',
     });
+    setShowOptionalFields(hasOptionalClientInfo(client));
     setModalVisible(true);
   };
 
+  const handlePhoneChange = (text) => {
+    setEditedClient((previousClient) => ({
+      ...previousClient,
+      phone: formatPhoneNumber(text),
+    }));
+  };
+
+  const handleBirthDateChange = (text) => {
+    setEditedClient((previousClient) => ({
+      ...previousClient,
+      birthDate: formatBirthDay(text),
+    }));
+  };
+
+  const buildClientPayload = () => ({
+    name: editedClient.name.trim(),
+    lastName: editedClient.lastName.trim(),
+    phone: editedClient.phone.trim() || null,
+    email: editedClient.email.trim() || null,
+    birthDate: formatDate(editedClient.birthDate),
+    address: editedClient.address.trim(),
+  });
+
   const handleSaveChanges = async () => {
     try {
-
-      const clientToUpdate = {
-        ...editedClient,
-        email: editedClient.email.trim() || null,
-        birthDate: formatDate(editedClient.birthDate)
-      };
+      const clientToUpdate = buildClientPayload();
 
       if (!validateFormData(clientToUpdate)) {
         return;
       }
 
-      console.log("🔄 Atualizando cliente na API...");
+      console.log('Atualizando cliente na API...');
       const response = await api.patch(`/clients/update/${selectedClient.id}`, clientToUpdate);
 
       if (response.status === 200) {
-        const updatedClients = clients.map(client =>
-          client.id === selectedClient.id ? { ...client, ...editedClient } : client
-        );
+        const updatedClient = response.data;
+        const updatedClients = clients.map((client) => (
+          client.id === selectedClient.id ? { ...client, ...updatedClient } : client
+        ));
 
         setClients(updatedClients);
-        setModalVisible(false);
+        closeEditModal();
         showFeedback({
           type: 'success',
           title: 'Sucesso',
@@ -127,7 +176,7 @@ const ClientScreen = () => {
         });
       }
     } catch (error) {
-      console.error("❌ Erro ao atualizar cliente:", error.response?.data || error.message);
+      console.error('Erro ao atualizar cliente:', error.response?.data || error.message);
       showFeedback({
         type: 'error',
         title: 'Erro',
@@ -138,7 +187,7 @@ const ClientScreen = () => {
 
   const handleDeleteClient = (client) => {
     Alert.alert(
-      'Confirmar Exclusão',
+      'Confirmar exclusão',
       `Deseja realmente excluir o cliente ${client.name} ${client.lastName || ''}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
@@ -151,7 +200,7 @@ const ClientScreen = () => {
               await removeClientLocally(client.id);
               fetchClients();
 
-              const updatedClients = clients.filter(c => c.id !== client.id);
+              const updatedClients = clients.filter((currentClient) => currentClient.id !== client.id);
               setClients(updatedClients);
 
               showFeedback({
@@ -160,31 +209,24 @@ const ClientScreen = () => {
                 message: 'Cliente excluído com sucesso!',
               });
             } catch (error) {
-              console.error("❌ Erro ao excluir cliente:", error);
+              console.error('Erro ao excluir cliente:', error);
               showFeedback({
                 type: 'error',
                 title: 'Erro',
                 message: 'Não foi possível excluir o cliente.',
               });
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
-  };
-
-  const handleDateConfirm = (selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setEditedClient({ ...editedClient, birthDate: selectedDate });
-    }
   };
 
   const renderClientItem = ({ item }) => (
     <View style={styles.item}>
       <View style={styles.clientInfo}>
         <Text style={styles.title}>Nome: {item.name} {item.lastName}</Text>
-        <Text>Telefone: {item.phone}</Text>
+        <Text>Telefone: {item.phone || 'Não informado'}</Text>
         {item.email ? <Text>Email: {item.email}</Text> : null}
       </View>
       <TouchableOpacity
@@ -196,7 +238,9 @@ const ClientScreen = () => {
     </View>
   );
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color={colors.primary} />;
+  if (loading) {
+    return <ActivityIndicator style={{ flex: 1 }} size="large" color={colors.primary} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -220,20 +264,19 @@ const ClientScreen = () => {
         <FlatList
           data={filteredClients}
           renderItem={renderClientItem}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
-          refreshControl={
+          refreshControl={(
             <RefreshControl refreshing={refreshing} onRefresh={fetchClients} />
-          }
+          )}
         />
       </View>
 
-      {/* MODAL DE EDIÇÃO DE CLIENTE */}
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={closeEditModal}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -243,9 +286,10 @@ const ClientScreen = () => {
                 <TouchableOpacity
                   style={styles.deleteIconButton}
                   onPress={() => {
-                    setModalVisible(false);
+                    const clientToDelete = selectedClient;
+                    closeEditModal();
                     setTimeout(() => {
-                      handleDeleteClient(selectedClient);
+                      handleDeleteClient(clientToDelete);
                     }, 300);
                   }}
                 >
@@ -264,60 +308,71 @@ const ClientScreen = () => {
               <TextInput
                 style={styles.input}
                 mode="outlined"
-                label="Sobrenome"
-                value={editedClient.lastName}
-                onChangeText={(text) => setEditedClient({ ...editedClient, lastName: text })}
-              />
-
-              <TextInput
-                style={styles.input}
-                mode="outlined"
-                label="Telefone *"
+                label="Telefone"
                 value={editedClient.phone}
-                onChangeText={(text) => setEditedClient({ ...editedClient, phone: text })}
+                onChangeText={handlePhoneChange}
                 keyboardType="phone-pad"
               />
 
-              <TextInput
-                style={styles.input}
-                mode="outlined"
-                label="Email (opcional)"
-                value={editedClient.email}
-                onChangeText={(text) => setEditedClient({ ...editedClient, email: text })}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-
               <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setShowDatePicker(true)}
+                style={styles.optionalToggle}
+                activeOpacity={0.75}
+                onPress={() => setShowOptionalFields((currentValue) => !currentValue)}
               >
-                <TextInput
-                  style={styles.input}
-                  mode="outlined"
-                  label="Data de Nascimento *"
-                  editable={false}
-                  value={formatDate(editedClient.birthDate)}
-                  right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
-                  pointerEvents="none"
-                />
+                <Text style={styles.optionalToggleText}>
+                  {showOptionalFields ? 'Ocultar opções' : 'Mais opções'}
+                </Text>
+                <Text style={styles.optionalToggleIcon}>{showOptionalFields ? 'v' : '>'}</Text>
               </TouchableOpacity>
 
-              <TextInput
-                style={[styles.input, styles.addressInput]}
-                mode="outlined"
-                label="Endereço"
-                value={editedClient.address}
-                onChangeText={(text) => setEditedClient({ ...editedClient, address: text })}
-                multiline
-              />
+              {showOptionalFields && (
+                <View style={styles.optionalFields}>
+                  <TextInput
+                    style={styles.input}
+                    mode="outlined"
+                    label="Sobrenome"
+                    value={editedClient.lastName}
+                    onChangeText={(text) => setEditedClient({ ...editedClient, lastName: text })}
+                  />
 
-              <Text style={styles.helperText}>* Campos obrigatórios</Text>
+                  <TextInput
+                    style={styles.input}
+                    mode="outlined"
+                    label="Email (opcional)"
+                    value={editedClient.email}
+                    onChangeText={(text) => setEditedClient({ ...editedClient, email: text })}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <TextInput
+                    style={styles.input}
+                    mode="outlined"
+                    label="Nascimento (opcional)"
+                    placeholder="09/08/1999"
+                    value={editedClient.birthDate}
+                    onChangeText={handleBirthDateChange}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                  />
+
+                  <TextInput
+                    style={[styles.input, styles.addressInput]}
+                    mode="outlined"
+                    label="Endereço"
+                    value={editedClient.address}
+                    onChangeText={(text) => setEditedClient({ ...editedClient, address: text })}
+                    multiline
+                  />
+                </View>
+              )}
+
+              <Text style={styles.helperText}>* Apenas nome é obrigatório.</Text>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => setModalVisible(false)}
+                  onPress={closeEditModal}
                 >
                   <Text style={styles.buttonText}>Cancelar</Text>
                 </TouchableOpacity>
@@ -333,16 +388,6 @@ const ClientScreen = () => {
           </View>
         </View>
       </Modal>
-
-      <DateTimePickerModal
-        visible={showDatePicker}
-        value={editedClient.birthDate || new Date()}
-        mode="date"
-        title="Data de nascimento"
-        iosDisplay="spinner"
-        onCancel={() => setShowDatePicker(false)}
-        onConfirm={handleDateConfirm}
-      />
 
       <FeedbackModal
         visible={feedback.visible}
@@ -394,10 +439,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
   },
   clientInfo: {
-    flex: 1
+    flex: 1,
   },
   title: {
     fontSize: 16,
@@ -436,6 +481,32 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     fontSize: 16,
   },
+  optionalToggle: {
+    minHeight: 44,
+    marginTop: 6,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionalToggleText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  optionalToggleIcon: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  optionalFields: {
+    marginBottom: 2,
+  },
   addressInput: {
     height: 80,
     textAlignVertical: 'top',
@@ -472,7 +543,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: 'bold',
   },
-
 });
 
 export default ClientScreen;
