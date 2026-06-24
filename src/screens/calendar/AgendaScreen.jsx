@@ -903,6 +903,7 @@ const AgendaScreen = () => {
         mode="date"
         title="Escolher dia"
         iosDisplay="inline"
+        useAppPicker
         onCancel={() => setShowDayPicker(false)}
         onConfirm={(pickedDate) => {
           setShowDayPicker(false);
@@ -1168,6 +1169,8 @@ const AgendaScreen = () => {
         mode={startPickerMode}
         title={startPickerMode === 'date' ? 'Data do agendamento' : 'Horário do agendamento'}
         iosDisplay={startPickerMode === 'date' ? 'inline' : 'spinner'}
+        minuteInterval={5}
+        useAppPicker
         onCancel={handleStartPickerCancel}
         onConfirm={handleStartPickerConfirm}
       />
