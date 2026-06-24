@@ -3,34 +3,32 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { TextInput } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import Button from '../../components/button';
-import DateTimePickerModal from '../../components/DateTimePickerModal';
 import FeedbackModal from '../../components/FeedbackModal';
 import api from '../../services/api';
 import formatPhoneNumber from '../../utils/formatNumber';
 import { validateFormData } from '../../utils/validations';
-import { formatDate } from '../../utils/formatBirthday';
+import { formatBirthDay, formatDate } from '../../utils/formatBirthday';
 import colors from '../../constants/colors';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
   const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     lastName: '',
     email: '',
     phone: '',
-    birthDate: new Date(1990, 5, 1),
-    address: ''
+    birthDate: '',
+    address: '',
   });
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
 
   const handleInputChange = (field, value) => {
-    setFormData({
-      ...formData,
-      [field]: value
-    });
+    setFormData((previousData) => ({
+      ...previousData,
+      [field]: value,
+    }));
   };
 
   const handlePhoneChange = (text) => {
@@ -38,27 +36,29 @@ export default function RegisterClientScreeen() {
     handleInputChange('phone', formattedPhone);
   };
 
-  const handleDateConfirm = (selectedDate) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setFormData({ ...formData, birthDate: selectedDate });
-    }
+  const handleBirthDateChange = (text) => {
+    handleInputChange('birthDate', formatBirthDay(text));
   };
 
+  const buildClientPayload = () => ({
+    name: formData.name.trim(),
+    lastName: formData.lastName.trim(),
+    email: formData.email.trim() || null,
+    phone: formData.phone.trim() || null,
+    birthDate: formatDate(formData.birthDate),
+    address: formData.address.trim(),
+  });
+
   const handleRegister = async () => {
-    const clientToRegister = {
-      ...formData,
-      email: formData.email.trim() || null,
-      birthDate: formatDate(formData.birthDate)
-    };
+    const clientToRegister = buildClientPayload();
+
     if (!validateFormData(clientToRegister)) {
       return;
     }
+
     console.log('Dados do cliente a serem enviados:', clientToRegister);
     try {
-      const response = await api.post('/clients/register',
-        clientToRegister
-      );
+      const response = await api.post('/clients/register', clientToRegister);
 
       if (response.data.success) {
         showFeedback({
@@ -110,25 +110,7 @@ export default function RegisterClientScreeen() {
           <TextInput
             style={styles.input}
             mode="outlined"
-            label="Sobrenome"
-            value={formData.lastName}
-            onChangeText={(value) => handleInputChange('lastName', value)}
-          />
-
-          <TextInput
-            style={styles.input}
-            mode="outlined"
-            label="Email (opcional)"
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            value={formData.email}
-            onChangeText={(value) => handleInputChange('email', value)}
-          />
-
-          <TextInput
-            style={styles.input}
-            mode="outlined"
-            label="Telefone *"
+            label="Telefone"
             placeholder="+55"
             keyboardType="phone-pad"
             value={formData.phone}
@@ -136,29 +118,59 @@ export default function RegisterClientScreeen() {
           />
 
           <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setShowDatePicker(true)}
+            style={styles.optionalToggle}
+            activeOpacity={0.75}
+            onPress={() => setShowOptionalFields((currentValue) => !currentValue)}
           >
-            <TextInput
-              style={styles.input}
-              mode="outlined"
-              label="Data de Nascimento *"
-              editable={false}
-              value={formData.birthDate instanceof Date ? formatDate(formData.birthDate) : ""}
-              right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
-              pointerEvents="none"
-            />
+            <Text style={styles.optionalToggleText}>
+              {showOptionalFields ? 'Ocultar opções' : 'Mais opções'}
+            </Text>
+            <Text style={styles.optionalToggleIcon}>{showOptionalFields ? 'v' : '>'}</Text>
           </TouchableOpacity>
 
-          <TextInput
-            style={styles.input}
-            mode="outlined"
-            label="Endereço"
-            value={formData.address}
-            onChangeText={(value) => handleInputChange('address', value)}
-          />
+          {showOptionalFields && (
+            <View style={styles.optionalFields}>
+              <TextInput
+                style={styles.input}
+                mode="outlined"
+                label="Sobrenome"
+                value={formData.lastName}
+                onChangeText={(value) => handleInputChange('lastName', value)}
+              />
 
-          <Text style={styles.helperText}>* Campos obrigatórios</Text>
+              <TextInput
+                style={styles.input}
+                mode="outlined"
+                label="Email (opcional)"
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                autoCapitalize="none"
+                value={formData.email}
+                onChangeText={(value) => handleInputChange('email', value)}
+              />
+
+              <TextInput
+                style={styles.input}
+                mode="outlined"
+                label="Nascimento (opcional)"
+                placeholder="09/08/1999"
+                keyboardType="number-pad"
+                maxLength={10}
+                value={formData.birthDate}
+                onChangeText={handleBirthDateChange}
+              />
+
+              <TextInput
+                style={styles.input}
+                mode="outlined"
+                label="Endereço"
+                value={formData.address}
+                onChangeText={(value) => handleInputChange('address', value)}
+              />
+            </View>
+          )}
+
+          <Text style={styles.helperText}>* Apenas nome é obrigatório.</Text>
 
           <Button
             title="Cadastrar"
@@ -170,20 +182,6 @@ export default function RegisterClientScreeen() {
           />
         </View>
       </ScrollView>
-
-      <DateTimePickerModal
-        visible={showDatePicker}
-        value={
-          formData.birthDate instanceof Date && !isNaN(formData.birthDate.getTime())
-            ? formData.birthDate
-            : new Date()
-        }
-        mode="date"
-        title="Data de nascimento"
-        iosDisplay="spinner"
-        onCancel={() => setShowDatePicker(false)}
-        onConfirm={handleDateConfirm}
-      />
 
       <FeedbackModal
         visible={feedback.visible}
@@ -217,6 +215,32 @@ const styles = StyleSheet.create({
     height: 50,
     marginBottom: 5,
     fontSize: 16,
+  },
+  optionalToggle: {
+    minHeight: 44,
+    marginTop: 6,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionalToggleText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  optionalToggleIcon: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  optionalFields: {
+    marginBottom: 2,
   },
   helperText: {
     color: colors.darkGray,
