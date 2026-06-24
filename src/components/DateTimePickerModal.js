@@ -220,24 +220,22 @@ const DateTimePickerModal = ({
           return (
             <TouchableOpacity
               key={day.toISOString()}
-              style={[
-                styles.dayCell,
-                isSelected && styles.dayCellSelected,
-                isDisabled && styles.dayCellDisabled,
-              ]}
+              style={[styles.dayCell, isDisabled && styles.dayCellDisabled]}
               disabled={isDisabled}
               onPress={() => setDraftDate(day)}
             >
-              <Text
-                style={[
-                  styles.dayText,
-                  !isCurrentMonth && styles.dayTextMuted,
-                  isSelected && styles.dayTextSelected,
-                  isDisabled && styles.dayTextDisabled,
-                ]}
-              >
-                {day.getDate()}
-              </Text>
+              <View style={[styles.dayNumberCircle, isSelected && styles.dayNumberCircleSelected]}>
+                <Text
+                  style={[
+                    styles.dayText,
+                    !isCurrentMonth && styles.dayTextMuted,
+                    isSelected && styles.dayTextSelected,
+                    isDisabled && styles.dayTextDisabled,
+                  ]}
+                >
+                  {day.getDate()}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -444,6 +442,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 0,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
@@ -452,6 +451,10 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 20,
     fontWeight: '800',
+    lineHeight: 22,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   monthTitleArea: {
     flex: 1,
@@ -488,18 +491,28 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
-  },
-  dayCellSelected: {
-    backgroundColor: colors.primary,
   },
   dayCellDisabled: {
     opacity: 0.35,
+  },
+  dayNumberCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayNumberCircleSelected: {
+    backgroundColor: colors.primary,
   },
   dayText: {
     color: colors.text,
     fontSize: 14,
     fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   dayTextMuted: {
     color: colors.lightGray,
