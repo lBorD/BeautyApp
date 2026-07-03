@@ -506,7 +506,16 @@ const AgendaScreen = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
+    try {
+      await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
+    } catch (error) {
+      console.error('Erro ao atualizar agenda:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível atualizar os dados da agenda.');
+      }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const openCreateModal = async () => {
@@ -579,6 +588,7 @@ const AgendaScreen = () => {
     setShowStartPicker(false);
     setStartPickerMode('date');
     setSubmitting(false);
+    hideFeedback();
     setClientSearch('');
     setServiceSearch('');
     setClientSearchLoading(false);
@@ -879,6 +889,55 @@ const AgendaScreen = () => {
     </View>
   );
 
+  const renderEmptyAgenda = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
+      <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
+      <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
+
+      {!canSchedule && (
+        <View style={styles.emptyActions}>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => navigation.navigate('RegisterCustomer')}
+          >
+            <Text style={styles.emptyActionText}>Cadastrar Cliente</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => navigation.navigate('RegisterService')}
+          >
+            <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderInlineFeedback = () => {
+    if (!feedback.visible) {
+      return null;
+    }
+
+    const feedbackColor = feedback.type === 'error' ? colors.secondary : colors.primary;
+    const feedbackIcon = feedback.type === 'error' ? 'alert-circle' : 'checkmark-circle';
+
+    return (
+      <View style={[styles.inlineFeedback, { borderLeftColor: feedbackColor }]}>
+        <View style={styles.inlineFeedbackHeader}>
+          <Ionicons name={feedbackIcon} size={18} color={feedbackColor} />
+          <Text style={styles.inlineFeedbackTitle}>{feedback.title || 'Atenção'}</Text>
+        </View>
+        {feedback.message ? <Text style={styles.inlineFeedbackMessage}>{feedback.message}</Text> : null}
+        <TouchableOpacity style={styles.inlineFeedbackButton} onPress={hideFeedback}>
+          <Text style={[styles.inlineFeedbackButtonText, { color: feedbackColor }]}>
+            {feedback.buttonText || 'OK'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -926,38 +985,20 @@ const AgendaScreen = () => {
         </View>
       </View>
 
-      {appointments.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
-          <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
-          <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
-
-          {!canSchedule && (
-            <View style={styles.emptyActions}>
-              <TouchableOpacity
-                style={styles.emptyActionButton}
-                onPress={() => navigation.navigate('RegisterCustomer')}
-              >
-                <Text style={styles.emptyActionText}>Cadastrar Cliente</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.emptyActionButton}
-                onPress={() => navigation.navigate('RegisterService')}
-              >
-                <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={appointments}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderAppointmentItem}
-          contentContainerStyle={[styles.listContainer, { paddingBottom: 96 + bottomInset }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        />
-      )}
+      <FlatList
+        style={styles.list}
+        data={appointments}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderAppointmentItem}
+        ListEmptyComponent={renderEmptyAgenda}
+        contentContainerStyle={[
+          styles.listContainer,
+          appointments.length === 0 && styles.emptyListContainer,
+          { paddingBottom: 96 + bottomInset },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        alwaysBounceVertical
+      />
 
       <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
@@ -1146,6 +1187,8 @@ const AgendaScreen = () => {
                 onChangeText={(value) => setForm((prev) => ({ ...prev, notes: value }))}
               />
 
+              {renderInlineFeedback()}
+
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={closeModal}>
                   <Text style={[styles.modalButtonText, styles.secondaryButtonText]}>Fechar</Text>
@@ -1173,25 +1216,25 @@ const AgendaScreen = () => {
             onCancel={handleStartPickerCancel}
             onConfirm={handleStartPickerConfirm}
           />
+
+          {submitting && (
+            <View style={styles.loadingOverlay} pointerEvents="auto">
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
 
       <FeedbackModal
-        visible={feedback.visible}
+        visible={feedback.visible && !modalVisible}
         type={feedback.type}
         title={feedback.title}
         message={feedback.message}
         buttonText={feedback.buttonText}
         onClose={hideFeedback}
       />
-
-      <Modal visible={submitting} transparent animationType="fade" statusBarTranslucent>
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -1277,6 +1320,12 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingBottom: 120,
+  },
+  list: {
+    flex: 1,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
   },
   card: {
     backgroundColor: colors.white,
@@ -1619,6 +1668,40 @@ const styles = StyleSheet.create({
   helperText: {
     color: colors.darkGray,
     fontSize: 12,
+  },
+  inlineFeedback: {
+    marginTop: 12,
+    borderLeftWidth: 4,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: colors.inputBackground,
+  },
+  inlineFeedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineFeedbackTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  inlineFeedbackMessage: {
+    marginTop: 6,
+    color: colors.darkGray,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inlineFeedbackButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  inlineFeedbackButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   modalButtonsRow: {
     flexDirection: 'row',
