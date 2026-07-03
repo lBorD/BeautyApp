@@ -1,9 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -1004,7 +1002,7 @@ const AgendaScreen = () => {
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
+      {modalVisible && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { paddingTop: 14 + insets.top, paddingBottom: 14 + bottomInset }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -1217,15 +1215,8 @@ const AgendaScreen = () => {
             onConfirm={handleStartPickerConfirm}
           />
 
-          {submitting && (
-            <View style={styles.loadingOverlay} pointerEvents="auto">
-              <View style={styles.loadingBox}>
-                <ActivityIndicator size="large" color={colors.primary} />
-              </View>
-            </View>
-          )}
         </View>
-      </Modal>
+      )}
 
       <FeedbackModal
         visible={feedback.visible && !modalVisible}
@@ -1255,20 +1246,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.darkGray,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  loadingBox: {
-    width: 88,
-    height: 88,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -1478,9 +1455,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   modalOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: -56,
+    left: -16,
+    right: -16,
+    bottom: 0,
     backgroundColor: colors.white,
-    position: 'relative',
+    zIndex: 20,
+    elevation: 20,
   },
   modalContent: {
     flex: 1,
