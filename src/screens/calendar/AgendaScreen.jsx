@@ -1005,7 +1005,12 @@ const AgendaScreen = () => {
       {modalVisible && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { paddingTop: 14 + insets.top, paddingBottom: 14 + bottomInset }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalTitle}>{isEditing ? 'Editar agendamento' : 'Novo agendamento'}</Text>
 
               <Text style={styles.fieldLabel}>Cliente</Text>
@@ -1455,12 +1460,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   modalOverlay: {
-    position: 'absolute',
-    top: -56,
-    left: -16,
-    right: -16,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.white,
+    overflow: 'hidden',
     zIndex: 20,
     elevation: 20,
   },
@@ -1468,6 +1470,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
     paddingHorizontal: 14,
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
   },
   modalTitle: {
     fontSize: 19,
