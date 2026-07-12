@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  BackHandler,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -581,7 +582,7 @@ const AgendaScreen = () => {
     setModalVisible(true);
   };
 
-  const closeModal = () => {
+  const closeModal = React.useCallback(() => {
     setModalVisible(false);
     setShowStartPicker(false);
     setStartPickerMode('date');
@@ -590,7 +591,7 @@ const AgendaScreen = () => {
     setClientSearch('');
     setServiceSearch('');
     setClientSearchLoading(false);
-  };
+  }, [hideFeedback]);
 
   const openStartPicker = (mode) => {
     setStartPickerMode(mode);
@@ -620,10 +621,32 @@ const AgendaScreen = () => {
     setStartPickerMode('date');
   };
 
-  const handleStartPickerCancel = () => {
+  const handleStartPickerCancel = React.useCallback(() => {
     setShowStartPicker(false);
     setStartPickerMode('date');
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!modalVisible) {
+      return undefined;
+    }
+
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (showStartPicker) {
+        handleStartPickerCancel();
+        return true;
+      }
+
+      if (submitting) {
+        return true;
+      }
+
+      closeModal();
+      return true;
+    });
+
+    return () => backSubscription.remove();
+  }, [closeModal, handleStartPickerCancel, modalVisible, showStartPicker, submitting]);
 
   const handleDepositPercentPress = (percent) => {
     const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
@@ -1193,7 +1216,15 @@ const AgendaScreen = () => {
               {renderInlineFeedback()}
 
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={closeModal}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    styles.secondaryButton,
+                    submitting && styles.disabledButton,
+                  ]}
+                  onPress={closeModal}
+                  disabled={submitting}
+                >
                   <Text style={[styles.modalButtonText, styles.secondaryButtonText]}>Fechar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
