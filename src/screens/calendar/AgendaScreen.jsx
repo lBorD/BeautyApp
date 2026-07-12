@@ -30,7 +30,7 @@ const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
-const DEFAULT_DEPOSIT_PERCENT = 30;
+const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
 
 const statusLabels = {

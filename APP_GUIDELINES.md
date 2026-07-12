@@ -103,7 +103,7 @@ Evitar lógica espalhada entre telas. Regras de negócio devem ficar centralizad
 4. integração com Google Calendar
 5. lembretes automáticos
 
-Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 30% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar e sem configuração por serviço.
+Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 0% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar e sem configuração por serviço.
 
 Evitar funcionalidades complexas antes da validação de uso real do fluxo principal.
 
