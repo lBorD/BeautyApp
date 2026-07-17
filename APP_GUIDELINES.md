@@ -52,6 +52,8 @@ Ordem ideal:
 
 Esse fluxo é prioridade máxima em qualquer decisão de UX e de backend.
 
+Conflitos de horário devem gerar um aviso claro, com opções para ajustar o horário ou agendar mesmo assim. Depois da confirmação explícita da profissional, a sobreposição não deve bloquear a criação ou edição do agendamento.
+
 ## Princípios de UX
 
 ### Redução de carga cognitiva

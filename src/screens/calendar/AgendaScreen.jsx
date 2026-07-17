@@ -15,9 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
-import FeedbackModal from '../../components/FeedbackModal';
 import colors from '../../constants/colors';
-import useFeedbackModal from '../../hooks/useFeedbackModal';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -240,7 +238,6 @@ const createBaseSlots = (date) => {
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
@@ -263,6 +260,7 @@ const AgendaScreen = () => {
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [startPickerMode, setStartPickerMode] = useState('date');
+  const [conflictConfirmationVisible, setConflictConfirmationVisible] = useState(false);
 
   const [form, setForm] = useState({
     clientId: null,
@@ -587,11 +585,11 @@ const AgendaScreen = () => {
     setShowStartPicker(false);
     setStartPickerMode('date');
     setSubmitting(false);
-    hideFeedback();
+    setConflictConfirmationVisible(false);
     setClientSearch('');
     setServiceSearch('');
     setClientSearchLoading(false);
-  }, [hideFeedback]);
+  }, []);
 
   const openStartPicker = (mode) => {
     setStartPickerMode(mode);
@@ -708,14 +706,10 @@ const AgendaScreen = () => {
   };
 
   const showAppointmentConflictFeedback = () => {
-    showFeedback({
-      type: 'error',
-      title: 'Conflito de horário',
-      message: 'Já existe outro agendamento neste mesmo horário. Ajuste a data ou o horário e tente novamente.',
-    });
+    setConflictConfirmationVisible(true);
   };
 
-  const handleSaveAppointment = async () => {
+  const handleSaveAppointment = async (allowConflict = false) => {
     if (submitting) {
       return;
     }
@@ -738,7 +732,7 @@ const AgendaScreen = () => {
       return;
     }
 
-    if (hasLocalAppointmentConflict()) {
+    if (!allowConflict && hasLocalAppointmentConflict()) {
       showAppointmentConflictFeedback();
       return;
     }
@@ -749,8 +743,10 @@ const AgendaScreen = () => {
       startAt: form.startAt.toISOString(),
       depositAmount: finalDepositAmount,
       notes: form.notes,
+      ...(allowConflict ? { allowConflict: true } : {}),
     };
 
+    setConflictConfirmationVisible(false);
     setSubmitting(true);
 
     if (isEditing && editingAppointmentId) {
@@ -761,7 +757,7 @@ const AgendaScreen = () => {
         ))));
         closeModal();
       } catch (error) {
-        if (isAppointmentConflictError(error)) {
+        if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
           return;
         }
@@ -779,7 +775,7 @@ const AgendaScreen = () => {
       setAppointments((prev) => sortAppointments([...prev, created]));
       closeModal();
     } catch (error) {
-      if (isAppointmentConflictError(error)) {
+      if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
         return;
       }
@@ -936,25 +932,37 @@ const AgendaScreen = () => {
   );
 
   const renderInlineFeedback = () => {
-    if (!feedback.visible) {
+    if (!conflictConfirmationVisible) {
       return null;
     }
 
-    const feedbackColor = feedback.type === 'error' ? colors.secondary : colors.primary;
-    const feedbackIcon = feedback.type === 'error' ? 'alert-circle' : 'checkmark-circle';
-
     return (
-      <View style={[styles.inlineFeedback, { borderLeftColor: feedbackColor }]}>
+      <View style={[styles.inlineFeedback, { borderLeftColor: colors.warning }]}>
         <View style={styles.inlineFeedbackHeader}>
-          <Ionicons name={feedbackIcon} size={18} color={feedbackColor} />
-          <Text style={styles.inlineFeedbackTitle}>{feedback.title || 'Atenção'}</Text>
+          <Ionicons name="alert-circle" size={18} color={colors.warning} />
+          <Text style={styles.inlineFeedbackTitle}>Conflito de horário</Text>
         </View>
-        {feedback.message ? <Text style={styles.inlineFeedbackMessage}>{feedback.message}</Text> : null}
-        <TouchableOpacity style={styles.inlineFeedbackButton} onPress={hideFeedback}>
-          <Text style={[styles.inlineFeedbackButtonText, { color: feedbackColor }]}>
-            {feedback.buttonText || 'OK'}
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.inlineFeedbackMessage}>
+          Já existe outro agendamento neste horário. Você pode ajustar o horário ou salvar mesmo assim.
+        </Text>
+        <View style={styles.inlineFeedbackActions}>
+          <TouchableOpacity
+            style={[styles.inlineFeedbackAction, styles.inlineFeedbackSecondaryAction]}
+            onPress={() => setConflictConfirmationVisible(false)}
+            disabled={submitting}
+          >
+            <Text style={styles.inlineFeedbackSecondaryActionText}>Ajustar horário</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.inlineFeedbackAction, styles.inlineFeedbackPrimaryAction]}
+            onPress={() => handleSaveAppointment(true)}
+            disabled={submitting}
+          >
+            <Text style={styles.inlineFeedbackPrimaryActionText}>
+              {submitting ? 'Salvando...' : 'Agendar mesmo assim'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -1229,7 +1237,7 @@ const AgendaScreen = () => {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.primaryButton, submitting && styles.disabledButton]}
-                  onPress={handleSaveAppointment}
+                  onPress={() => handleSaveAppointment()}
                   disabled={submitting}
                 >
                   <Text style={styles.modalButtonText}>{submitting ? 'Salvando...' : 'Confirmar'}</Text>
@@ -1254,14 +1262,6 @@ const AgendaScreen = () => {
         </View>
       )}
 
-      <FeedbackModal
-        visible={feedback.visible && !modalVisible}
-        type={feedback.type}
-        title={feedback.title}
-        message={feedback.message}
-        buttonText={feedback.buttonText}
-        onClose={hideFeedback}
-      />
     </View>
   );
 };
@@ -1714,15 +1714,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  inlineFeedbackButton: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    paddingVertical: 4,
-    paddingRight: 8,
+  inlineFeedbackActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
   },
-  inlineFeedbackButtonText: {
+  inlineFeedbackAction: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  inlineFeedbackSecondaryAction: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.white,
+  },
+  inlineFeedbackPrimaryAction: {
+    backgroundColor: colors.primary,
+  },
+  inlineFeedbackSecondaryActionText: {
+    color: colors.primary,
     fontSize: 13,
     fontWeight: '800',
+    textAlign: 'center',
+  },
+  inlineFeedbackPrimaryActionText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   modalButtonsRow: {
     flexDirection: 'row',
