@@ -52,6 +52,8 @@ Ordem ideal:
 
 Esse fluxo é prioridade máxima em qualquer decisão de UX e de backend.
 
+Conflitos de horário devem gerar um aviso claro, com opções para ajustar o horário ou agendar mesmo assim. Depois da confirmação explícita da profissional, a sobreposição não deve bloquear a criação ou edição do agendamento.
+
 ## Princípios de UX
 
 ### Redução de carga cognitiva
@@ -103,7 +105,7 @@ Evitar lógica espalhada entre telas. Regras de negócio devem ficar centralizad
 4. integração com Google Calendar
 5. lembretes automáticos
 
-Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 30% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar e sem configuração por serviço.
+Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 0% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar e sem configuração por serviço.
 
 Evitar funcionalidades complexas antes da validação de uso real do fluxo principal.
 

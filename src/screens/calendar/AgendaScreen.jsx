@@ -1,9 +1,8 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -16,9 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
-import FeedbackModal from '../../components/FeedbackModal';
 import colors from '../../constants/colors';
-import useFeedbackModal from '../../hooks/useFeedbackModal';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -32,7 +29,7 @@ const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
-const DEFAULT_DEPOSIT_PERCENT = 30;
+const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
 
 const statusLabels = {
@@ -241,7 +238,6 @@ const createBaseSlots = (date) => {
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
@@ -264,6 +260,7 @@ const AgendaScreen = () => {
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [startPickerMode, setStartPickerMode] = useState('date');
+  const [conflictConfirmationVisible, setConflictConfirmationVisible] = useState(false);
 
   const [form, setForm] = useState({
     clientId: null,
@@ -506,7 +503,16 @@ const AgendaScreen = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
+    try {
+      await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
+    } catch (error) {
+      console.error('Erro ao atualizar agenda:', error.response?.data || error.message);
+      if (!isSessionExpiredError(error)) {
+        Alert.alert('Erro', 'Não foi possível atualizar os dados da agenda.');
+      }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const openCreateModal = async () => {
@@ -574,15 +580,16 @@ const AgendaScreen = () => {
     setModalVisible(true);
   };
 
-  const closeModal = () => {
+  const closeModal = React.useCallback(() => {
     setModalVisible(false);
     setShowStartPicker(false);
     setStartPickerMode('date');
     setSubmitting(false);
+    setConflictConfirmationVisible(false);
     setClientSearch('');
     setServiceSearch('');
     setClientSearchLoading(false);
-  };
+  }, []);
 
   const openStartPicker = (mode) => {
     setStartPickerMode(mode);
@@ -612,10 +619,32 @@ const AgendaScreen = () => {
     setStartPickerMode('date');
   };
 
-  const handleStartPickerCancel = () => {
+  const handleStartPickerCancel = React.useCallback(() => {
     setShowStartPicker(false);
     setStartPickerMode('date');
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!modalVisible) {
+      return undefined;
+    }
+
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (showStartPicker) {
+        handleStartPickerCancel();
+        return true;
+      }
+
+      if (submitting) {
+        return true;
+      }
+
+      closeModal();
+      return true;
+    });
+
+    return () => backSubscription.remove();
+  }, [closeModal, handleStartPickerCancel, modalVisible, showStartPicker, submitting]);
 
   const handleDepositPercentPress = (percent) => {
     const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
@@ -677,14 +706,10 @@ const AgendaScreen = () => {
   };
 
   const showAppointmentConflictFeedback = () => {
-    showFeedback({
-      type: 'error',
-      title: 'Conflito de horário',
-      message: 'Já existe outro agendamento neste mesmo horário. Ajuste a data ou o horário e tente novamente.',
-    });
+    setConflictConfirmationVisible(true);
   };
 
-  const handleSaveAppointment = async () => {
+  const handleSaveAppointment = async (allowConflict = false) => {
     if (submitting) {
       return;
     }
@@ -707,7 +732,7 @@ const AgendaScreen = () => {
       return;
     }
 
-    if (hasLocalAppointmentConflict()) {
+    if (!allowConflict && hasLocalAppointmentConflict()) {
       showAppointmentConflictFeedback();
       return;
     }
@@ -718,8 +743,10 @@ const AgendaScreen = () => {
       startAt: form.startAt.toISOString(),
       depositAmount: finalDepositAmount,
       notes: form.notes,
+      ...(allowConflict ? { allowConflict: true } : {}),
     };
 
+    setConflictConfirmationVisible(false);
     setSubmitting(true);
 
     if (isEditing && editingAppointmentId) {
@@ -730,7 +757,7 @@ const AgendaScreen = () => {
         ))));
         closeModal();
       } catch (error) {
-        if (isAppointmentConflictError(error)) {
+        if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
           return;
         }
@@ -748,7 +775,7 @@ const AgendaScreen = () => {
       setAppointments((prev) => sortAppointments([...prev, created]));
       closeModal();
     } catch (error) {
-      if (isAppointmentConflictError(error)) {
+      if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
         return;
       }
@@ -879,6 +906,67 @@ const AgendaScreen = () => {
     </View>
   );
 
+  const renderEmptyAgenda = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
+      <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
+      <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
+
+      {!canSchedule && (
+        <View style={styles.emptyActions}>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => navigation.navigate('RegisterCustomer')}
+          >
+            <Text style={styles.emptyActionText}>Cadastrar Cliente</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.emptyActionButton}
+            onPress={() => navigation.navigate('RegisterService')}
+          >
+            <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderInlineFeedback = () => {
+    if (!conflictConfirmationVisible) {
+      return null;
+    }
+
+    return (
+      <View style={[styles.inlineFeedback, { borderLeftColor: colors.warning }]}>
+        <View style={styles.inlineFeedbackHeader}>
+          <Ionicons name="alert-circle" size={18} color={colors.warning} />
+          <Text style={styles.inlineFeedbackTitle}>Conflito de horário</Text>
+        </View>
+        <Text style={styles.inlineFeedbackMessage}>
+          Já existe outro agendamento neste horário. Você pode ajustar o horário ou salvar mesmo assim.
+        </Text>
+        <View style={styles.inlineFeedbackActions}>
+          <TouchableOpacity
+            style={[styles.inlineFeedbackAction, styles.inlineFeedbackSecondaryAction]}
+            onPress={() => setConflictConfirmationVisible(false)}
+            disabled={submitting}
+          >
+            <Text style={styles.inlineFeedbackSecondaryActionText}>Ajustar horário</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.inlineFeedbackAction, styles.inlineFeedbackPrimaryAction]}
+            onPress={() => handleSaveAppointment(true)}
+            disabled={submitting}
+          >
+            <Text style={styles.inlineFeedbackPrimaryActionText}>
+              {submitting ? 'Salvando...' : 'Agendar mesmo assim'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -926,47 +1014,34 @@ const AgendaScreen = () => {
         </View>
       </View>
 
-      {appointments.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
-          <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
-          <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
-
-          {!canSchedule && (
-            <View style={styles.emptyActions}>
-              <TouchableOpacity
-                style={styles.emptyActionButton}
-                onPress={() => navigation.navigate('RegisterCustomer')}
-              >
-                <Text style={styles.emptyActionText}>Cadastrar Cliente</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.emptyActionButton}
-                onPress={() => navigation.navigate('RegisterService')}
-              >
-                <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={appointments}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderAppointmentItem}
-          contentContainerStyle={[styles.listContainer, { paddingBottom: 96 + bottomInset }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        />
-      )}
+      <FlatList
+        style={styles.list}
+        data={appointments}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderAppointmentItem}
+        ListEmptyComponent={renderEmptyAgenda}
+        contentContainerStyle={[
+          styles.listContainer,
+          appointments.length === 0 && styles.emptyListContainer,
+          { paddingBottom: 96 + bottomInset },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        alwaysBounceVertical
+      />
 
       <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} animationType="slide" onRequestClose={closeModal}>
+      {modalVisible && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { paddingTop: 14 + insets.top, paddingBottom: 14 + bottomInset }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalTitle}>{isEditing ? 'Editar agendamento' : 'Novo agendamento'}</Text>
 
               <Text style={styles.fieldLabel}>Cliente</Text>
@@ -1146,13 +1221,23 @@ const AgendaScreen = () => {
                 onChangeText={(value) => setForm((prev) => ({ ...prev, notes: value }))}
               />
 
+              {renderInlineFeedback()}
+
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity style={[styles.modalButton, styles.secondaryButton]} onPress={closeModal}>
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    styles.secondaryButton,
+                    submitting && styles.disabledButton,
+                  ]}
+                  onPress={closeModal}
+                  disabled={submitting}
+                >
                   <Text style={[styles.modalButtonText, styles.secondaryButtonText]}>Fechar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.primaryButton, submitting && styles.disabledButton]}
-                  onPress={handleSaveAppointment}
+                  onPress={() => handleSaveAppointment()}
                   disabled={submitting}
                 >
                   <Text style={styles.modalButtonText}>{submitting ? 'Salvando...' : 'Confirmar'}</Text>
@@ -1173,25 +1258,10 @@ const AgendaScreen = () => {
             onCancel={handleStartPickerCancel}
             onConfirm={handleStartPickerConfirm}
           />
-        </View>
-      </Modal>
 
-      <FeedbackModal
-        visible={feedback.visible}
-        type={feedback.type}
-        title={feedback.title}
-        message={feedback.message}
-        buttonText={feedback.buttonText}
-        onClose={hideFeedback}
-      />
-
-      <Modal visible={submitting} transparent animationType="fade" statusBarTranslucent>
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
         </View>
-      </Modal>
+      )}
+
     </View>
   );
 };
@@ -1212,20 +1282,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: colors.darkGray,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  loadingBox: {
-    width: 88,
-    height: 88,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -1277,6 +1333,12 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingBottom: 120,
+  },
+  list: {
+    flex: 1,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
   },
   card: {
     backgroundColor: colors.white,
@@ -1429,14 +1491,22 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   modalOverlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.white,
-    position: 'relative',
+    overflow: 'hidden',
+    zIndex: 20,
+    elevation: 20,
   },
   modalContent: {
     flex: 1,
     backgroundColor: colors.white,
     paddingHorizontal: 14,
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
   },
   modalTitle: {
     fontSize: 19,
@@ -1619,6 +1689,64 @@ const styles = StyleSheet.create({
   helperText: {
     color: colors.darkGray,
     fontSize: 12,
+  },
+  inlineFeedback: {
+    marginTop: 12,
+    borderLeftWidth: 4,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: colors.inputBackground,
+  },
+  inlineFeedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineFeedbackTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  inlineFeedbackMessage: {
+    marginTop: 6,
+    color: colors.darkGray,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inlineFeedbackActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  inlineFeedbackAction: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  inlineFeedbackSecondaryAction: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.white,
+  },
+  inlineFeedbackPrimaryAction: {
+    backgroundColor: colors.primary,
+  },
+  inlineFeedbackSecondaryActionText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  inlineFeedbackPrimaryActionText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   modalButtonsRow: {
     flexDirection: 'row',
