@@ -110,6 +110,14 @@ export default function RegisterClientScreeen() {
           <TextInput
             style={styles.input}
             mode="outlined"
+            label="Sobrenome"
+            value={formData.lastName}
+            onChangeText={(value) => handleInputChange('lastName', value)}
+          />
+
+          <TextInput
+            style={styles.input}
+            mode="outlined"
             label="Telefone"
             placeholder="+55"
             keyboardType="phone-pad"
@@ -130,14 +138,6 @@ export default function RegisterClientScreeen() {
 
           {showOptionalFields && (
             <View style={styles.optionalFields}>
-              <TextInput
-                style={styles.input}
-                mode="outlined"
-                label="Sobrenome"
-                value={formData.lastName}
-                onChangeText={(value) => handleInputChange('lastName', value)}
-              />
-
               <TextInput
                 style={styles.input}
                 mode="outlined"
