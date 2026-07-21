@@ -74,6 +74,8 @@ Regras visuais:
 - espaçamento generoso
 - ação principal clara e óbvia em cada tela
 
+Na Agenda, os cards devem priorizar horário, status, cliente, serviço e sincronização Google. Ações secundárias ficam recolhidas sob um lápis com área de toque acessível; somente um card pode permanecer expandido. Confirmações abertas dentro do fluxo de agendamento devem ser inline para não empilhar modais nativos no iOS.
+
 ### Velocidade percebida
 
 O app deve parecer instantâneo.
@@ -105,7 +107,7 @@ Evitar lógica espalhada entre telas. Regras de negócio devem ficar centralizad
 4. integração com Google Calendar
 5. lembretes automáticos
 
-Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 0% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar e sem configuração por serviço.
+Financeiro e regras para agendamentos concluídos/cancelados não são prioridade imediata. Antes de qualquer implementação financeira real, definir como esses status afetam os cálculos. O sinal, por enquanto, tem regra simples: padrão de 0% do valor total, por agendamento, ajustável por seletor de percentual ou por valor manual em R$, com exibição de quanto falta pagar no formulário/resumo e sem configuração por serviço. Esses valores não precisam ocupar os cards diários.
 
 Evitar funcionalidades complexas antes da validação de uso real do fluxo principal.
 
