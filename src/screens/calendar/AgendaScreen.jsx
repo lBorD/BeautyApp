@@ -1,14 +1,19 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
+  Animated,
   BackHandler,
   FlatList,
+  LayoutAnimation,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,11 +36,17 @@ const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
+const CALENDAR_LOOKAHEAD_DAYS = 90;
+const ACTION_ANIMATION_DURATION = 180;
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const statusLabels = {
   scheduled: 'Agendado',
   canceled: 'Cancelado',
-  completed: 'Concluido',
+  completed: 'Concluído',
 };
 
 const statusColors = {
@@ -125,6 +136,54 @@ const buildDayUtcRange = (date) => {
     to: to.toISOString(),
   };
 };
+
+const padDatePart = (value) => String(value).padStart(2, '0');
+
+const getLocalDateKey = (dateValue) => {
+  const date = new Date(dateValue);
+  return [
+    date.getFullYear(),
+    padDatePart(date.getMonth() + 1),
+    padDatePart(date.getDate()),
+  ].join('-');
+};
+
+const getMonthKey = (dateValue) => {
+  const date = new Date(dateValue);
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}`;
+};
+
+const buildCalendarGridUtcRange = (monthValue) => {
+  const month = new Date(monthValue);
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const from = new Date(firstDay);
+  from.setDate(firstDay.getDate() - firstDay.getDay());
+  from.setHours(0, 0, 0, 0);
+
+  const to = new Date(from);
+  to.setDate(from.getDate() + 41);
+  to.setHours(23, 59, 59, 999);
+
+  return { from: from.toISOString(), to: to.toISOString() };
+};
+
+const buildInitialAgendaUtcRange = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const from = new Date(today);
+  from.setDate(today.getDate() + 1);
+
+  const to = new Date(today);
+  to.setDate(today.getDate() + CALENDAR_LOOKAHEAD_DAYS);
+  to.setHours(23, 59, 59, 999);
+
+  return { from: from.toISOString(), to: to.toISOString() };
+};
+
+const isSameLocalDay = (firstDate, secondDate) => (
+  getLocalDateKey(firstDate) === getLocalDateKey(secondDate)
+);
 
 const formatCurrency = (value = 0) => Number(value).toLocaleString('pt-BR', {
   style: 'currency',
@@ -241,6 +300,16 @@ const AgendaScreen = () => {
   const bottomInset = Math.max(insets.bottom, 8);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
+  const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [calendarMarksByMonth, setCalendarMarksByMonth] = useState({});
+  const calendarMarksCacheRef = useRef({});
+  const calendarCacheGenerationRef = useRef(0);
+  const calendarRequestIdsRef = useRef({});
+  const didBootstrapRef = useRef(false);
+  const skipSelectedDateEffectRef = useRef(false);
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
@@ -254,6 +323,13 @@ const AgendaScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [expandedAppointmentId, setExpandedAppointmentId] = useState(null);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
+  const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
+  const [statusAnimationAppointmentId, setStatusAnimationAppointmentId] = useState(null);
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+  const actionMenuAnimation = useRef(new Animated.Value(0)).current;
+  const statusChangeAnimation = useRef(new Animated.Value(1)).current;
 
   const [modalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -274,6 +350,37 @@ const AgendaScreen = () => {
   });
 
   const canSchedule = hasClientRecords && services.length > 0;
+  const markedDates = calendarMarksByMonth[getMonthKey(visibleCalendarMonth)] || [];
+
+  const animateNextLayout = useCallback(() => {
+    if (reduceMotionEnabled) {
+      return;
+    }
+
+    LayoutAnimation.configureNext({
+      duration: ACTION_ANIMATION_DURATION,
+      create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+      update: { type: LayoutAnimation.Types.easeInEaseOut },
+      delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+    });
+  }, [reduceMotionEnabled]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((isEnabled) => {
+      if (mounted) {
+        setReduceMotionEnabled(isEnabled);
+      }
+    });
+
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotionEnabled);
+
+    return () => {
+      mounted = false;
+      subscription?.remove?.();
+    };
+  }, []);
 
   const selectedServices = useMemo(
     () => form.serviceIds
@@ -414,13 +521,13 @@ const AgendaScreen = () => {
     setServices(servicesResponse.data || []);
   };
 
-  const loadAgenda = async ({ isRefresh = false } = {}) => {
+  const loadAgendaForDate = async (date, { isRefresh = false } = {}) => {
     if (!isRefresh) {
       setLoading(true);
     }
 
     try {
-      const { from, to } = buildDayUtcRange(selectedDate);
+      const { from, to } = buildDayUtcRange(date);
       const data = await listAppointments({ from, to });
       const visibleAppointments = filterVisibleAgendaAppointments(data);
       setAppointments(sortAppointments(visibleAppointments));
@@ -435,11 +542,107 @@ const AgendaScreen = () => {
     }
   };
 
+  const loadCalendarMarks = useCallback(async (monthValue, { force = false } = {}) => {
+    const normalizedMonth = new Date(
+      monthValue.getFullYear(),
+      monthValue.getMonth(),
+      1,
+    );
+    const monthKey = getMonthKey(normalizedMonth);
+    const cachedMarks = calendarMarksCacheRef.current[monthKey];
+
+    if (!force && cachedMarks) {
+      setCalendarMarksByMonth((previous) => ({ ...previous, [monthKey]: cachedMarks }));
+      return cachedMarks;
+    }
+
+    const requestGeneration = calendarCacheGenerationRef.current;
+    const requestId = (calendarRequestIdsRef.current[monthKey] || 0) + 1;
+    calendarRequestIdsRef.current[monthKey] = requestId;
+
+    try {
+      const { from, to } = buildCalendarGridUtcRange(normalizedMonth);
+      const data = await listAppointments({ from, to });
+      const nextMarks = [...new Set(
+        data
+          .filter((appointment) => ['scheduled', 'completed'].includes(appointment.status))
+          .map((appointment) => getLocalDateKey(appointment.startAt)),
+      )].sort();
+
+      if (
+        calendarCacheGenerationRef.current !== requestGeneration
+        || calendarRequestIdsRef.current[monthKey] !== requestId
+      ) {
+        return calendarMarksCacheRef.current[monthKey] || [];
+      }
+
+      calendarMarksCacheRef.current[monthKey] = nextMarks;
+      setCalendarMarksByMonth((previous) => ({ ...previous, [monthKey]: nextMarks }));
+      return nextMarks;
+    } catch (error) {
+      console.error('Erro ao carregar marcadores da agenda:', error.response?.data || error.message);
+      return cachedMarks || [];
+    }
+  }, []);
+
+  const refreshCalendarMarksForDates = useCallback(async (dateValues) => {
+    if (dateValues.filter(Boolean).length === 0) {
+      return;
+    }
+
+    // A grade de 42 dias inclui datas dos meses vizinhos. Limpar o cache inteiro
+    // evita deixar um marcador de borda desatualizado após mover ou excluir.
+    calendarCacheGenerationRef.current += 1;
+    calendarMarksCacheRef.current = {};
+    setCalendarMarksByMonth({});
+    await loadCalendarMarks(visibleCalendarMonth, { force: true });
+  }, [loadCalendarMarks, visibleCalendarMonth]);
+
+  const handleVisibleMonthChange = useCallback((nextMonth) => {
+    const normalizedMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1);
+    setVisibleCalendarMonth(normalizedMonth);
+    loadCalendarMarks(normalizedMonth);
+  }, [loadCalendarMarks]);
+
+  const openDayPicker = () => {
+    const nextMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    setVisibleCalendarMonth(nextMonth);
+    setShowDayPicker(true);
+    loadCalendarMarks(nextMonth);
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let initialDate = today;
+
       try {
-        await loadClientsAndServices();
-        await loadAgenda();
+        const { from, to } = buildInitialAgendaUtcRange();
+        const futureAppointments = filterVisibleAgendaAppointments(
+          await listAppointments({ from, to }),
+        );
+        const nextAppointment = sortAppointments(futureAppointments)[0];
+
+        if (nextAppointment) {
+          initialDate = new Date(nextAppointment.startAt);
+        }
+      } catch (error) {
+        console.error('Erro ao localizar próximo atendimento:', error.response?.data || error.message);
+      }
+
+      const initialMonth = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+      didBootstrapRef.current = true;
+      skipSelectedDateEffectRef.current = true;
+      setSelectedDate(initialDate);
+      setVisibleCalendarMonth(initialMonth);
+
+      try {
+        await Promise.all([
+          loadClientsAndServices(),
+          loadAgendaForDate(initialDate),
+          loadCalendarMarks(initialMonth),
+        ]);
       } catch (error) {
         if (!isSessionExpiredError(error)) {
           Alert.alert('Erro', 'Não foi possível carregar os dados iniciais da agenda.');
@@ -453,7 +656,19 @@ const AgendaScreen = () => {
   }, []);
 
   useEffect(() => {
-    loadAgenda();
+    if (!didBootstrapRef.current) {
+      return;
+    }
+
+    if (skipSelectedDateEffectRef.current) {
+      skipSelectedDateEffectRef.current = false;
+      return;
+    }
+
+    animateNextLayout();
+    setExpandedAppointmentId(null);
+    setDeleteConfirmationId(null);
+    loadAgendaForDate(selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
@@ -504,7 +719,11 @@ const AgendaScreen = () => {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadClientsAndServices(), loadAgenda({ isRefresh: true })]);
+      await Promise.all([
+        loadClientsAndServices(),
+        loadAgendaForDate(selectedDate, { isRefresh: true }),
+        loadCalendarMarks(visibleCalendarMonth, { force: true }),
+      ]);
     } catch (error) {
       console.error('Erro ao atualizar agenda:', error.response?.data || error.message);
       if (!isSessionExpiredError(error)) {
@@ -550,6 +769,9 @@ const AgendaScreen = () => {
   };
 
   const openEditModal = async (appointment) => {
+    animateNextLayout();
+    setExpandedAppointmentId(null);
+    setDeleteConfirmationId(null);
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
     setClientSearch('');
@@ -764,12 +986,23 @@ const AgendaScreen = () => {
     setSubmitting(true);
 
     if (isEditing && editingAppointmentId) {
+      const previousAppointment = appointments.find((item) => (
+        String(item.id) === String(editingAppointmentId)
+      ));
+
       try {
         const updated = await updateAppointment(editingAppointmentId, payload);
-        setAppointments((prev) => sortAppointments(prev.map((item) => (
-          String(item.id) === String(editingAppointmentId) ? updated : item
-        ))));
+        setAppointments((prev) => {
+          const withoutEditedAppointment = prev.filter((item) => (
+            String(item.id) !== String(editingAppointmentId)
+          ));
+
+          return isSameLocalDay(updated.startAt, selectedDate)
+            ? sortAppointments([...withoutEditedAppointment, updated])
+            : sortAppointments(withoutEditedAppointment);
+        });
         closeModal();
+        refreshCalendarMarksForDates([previousAppointment?.startAt, updated.startAt]);
       } catch (error) {
         if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
@@ -786,8 +1019,11 @@ const AgendaScreen = () => {
 
     try {
       const created = await createAppointment(payload);
-      setAppointments((prev) => sortAppointments([...prev, created]));
+      if (isSameLocalDay(created.startAt, selectedDate)) {
+        setAppointments((prev) => sortAppointments([...prev, created]));
+      }
       closeModal();
+      refreshCalendarMarksForDates([created.startAt]);
     } catch (error) {
       if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
@@ -801,124 +1037,269 @@ const AgendaScreen = () => {
   };
 
   const handleStatusChange = async (appointmentId, nextStatus) => {
-    const previousItem = appointments.find((item) => item.id === appointmentId);
+    const previousItem = appointments.find((item) => String(item.id) === String(appointmentId));
     if (!previousItem || previousItem.status === nextStatus) {
       return;
     }
 
+    animateNextLayout();
+    setExpandedAppointmentId(null);
+    setDeleteConfirmationId(null);
+    actionMenuAnimation.setValue(0);
+
+    if (nextStatus === 'completed' && !reduceMotionEnabled) {
+      setStatusAnimationAppointmentId(appointmentId);
+      statusChangeAnimation.setValue(0);
+      Animated.timing(statusChangeAnimation, {
+        toValue: 1,
+        duration: ACTION_ANIMATION_DURATION,
+        useNativeDriver: true,
+      }).start(() => setStatusAnimationAppointmentId(null));
+    }
+
     setAppointments((prev) => sortAppointments(prev.map((item) => (
-      item.id === appointmentId ? { ...item, status: nextStatus } : item
+      String(item.id) === String(appointmentId) ? { ...item, status: nextStatus } : item
     ))));
 
     try {
       const updated = await updateAppointmentStatus(appointmentId, nextStatus);
 
       if (nextStatus === 'canceled' || isCanceledAppointment(updated)) {
+        animateNextLayout();
         setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointmentId)));
+        refreshCalendarMarksForDates([previousItem.startAt]);
         return;
       }
 
+      animateNextLayout();
       setAppointments((prev) => sortAppointments(prev.map((item) => (
-        item.id === appointmentId ? updated : item
+        String(item.id) === String(appointmentId) ? updated : item
       ))));
     } catch (error) {
+      animateNextLayout();
       setAppointments((prev) => sortAppointments(prev.map((item) => (
-        item.id === appointmentId ? previousItem : item
+        String(item.id) === String(appointmentId) ? previousItem : item
       ))));
 
       Alert.alert('Erro', error.response?.data?.error || 'Não foi possível atualizar status.');
     }
   };
 
-  const handleRemoveCanceledAppointment = (appointment) => {
-    if (!isCanceledAppointment(appointment)) {
+  const toggleAppointmentActions = (appointmentId) => {
+    const willExpand = String(expandedAppointmentId) !== String(appointmentId);
+    animateNextLayout();
+    setDeleteConfirmationId(null);
+
+    if (!willExpand) {
+      setExpandedAppointmentId(null);
+      actionMenuAnimation.setValue(0);
       return;
     }
 
-    Alert.alert(
-      'Excluir agendamento?',
-      'Este agendamento será removido da agenda. No backend ele continuará cancelado.',
-      [
-        { text: 'Manter', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: () => {
-            setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
-          },
-        },
-      ],
-    );
+    setExpandedAppointmentId(appointmentId);
+
+    if (reduceMotionEnabled) {
+      actionMenuAnimation.setValue(1);
+      return;
+    }
+
+    actionMenuAnimation.setValue(0);
+    Animated.timing(actionMenuAnimation, {
+      toValue: 1,
+      duration: ACTION_ANIMATION_DURATION,
+      useNativeDriver: true,
+    }).start();
   };
 
-  const renderAppointmentItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeaderRow}>
-        <Text style={styles.cardTime}>{formatTime(item.startAt)} - {formatTime(item.endAt)}</Text>
-        <View style={styles.cardHeaderActions}>
-          <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] || colors.darkGray }]}>
-            <Text style={styles.statusBadgeText}>{statusLabels[item.status] || item.status}</Text>
-          </View>
-          {isCanceledAppointment(item) && (
+  const openDeleteConfirmation = (appointmentId) => {
+    animateNextLayout();
+    setDeleteConfirmationId(appointmentId);
+  };
+
+  const closeDeleteConfirmation = () => {
+    animateNextLayout();
+    setDeleteConfirmationId(null);
+  };
+
+  const handleDeleteAppointment = async (appointment) => {
+    if (deletingAppointmentId !== null) {
+      return;
+    }
+
+    setDeletingAppointmentId(appointment.id);
+
+    try {
+      await updateAppointmentStatus(appointment.id, 'canceled');
+      animateNextLayout();
+      setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
+      setExpandedAppointmentId(null);
+      setDeleteConfirmationId(null);
+      actionMenuAnimation.setValue(0);
+      refreshCalendarMarksForDates([appointment.startAt]);
+    } catch (error) {
+      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível excluir o atendimento.');
+    } finally {
+      setDeletingAppointmentId(null);
+    }
+  };
+
+  const renderAppointmentItem = ({ item }) => {
+    const isExpanded = String(expandedAppointmentId) === String(item.id);
+    const isConfirmingDelete = String(deleteConfirmationId) === String(item.id);
+    const isDeleting = String(deletingAppointmentId) === String(item.id);
+    const isAnimatingStatus = String(statusAnimationAppointmentId) === String(item.id);
+    const animatedMenuStyle = {
+      opacity: actionMenuAnimation,
+      transform: [{
+        translateY: actionMenuAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: [6, 0],
+        }),
+      }],
+    };
+    const animatedEditIconStyle = isExpanded ? {
+      transform: [
+        {
+          rotate: actionMenuAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['0deg', '-8deg'],
+          }),
+        },
+        {
+          scale: actionMenuAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 1.05],
+          }),
+        },
+      ],
+    } : undefined;
+
+    return (
+      <Animated.View style={[
+        styles.card,
+        isAnimatingStatus && {
+          opacity: statusChangeAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.82, 1],
+          }),
+          transform: [{
+            scale: statusChangeAnimation.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.99, 1],
+            }),
+          }],
+        },
+      ]}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTime} numberOfLines={1}>
+            {formatTime(item.startAt)} - {formatTime(item.endAt)}
+          </Text>
+          <View style={styles.cardHeaderActions}>
+            <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] || colors.darkGray }]}>
+              <Text style={styles.statusBadgeText}>{statusLabels[item.status] || item.status}</Text>
+            </View>
             <TouchableOpacity
-              style={styles.removeCanceledButton}
-              onPress={() => handleRemoveCanceledAppointment(item)}
+              style={[styles.editActionsButton, isExpanded && styles.editActionsButtonExpanded]}
+              onPress={() => toggleAppointmentActions(item.id)}
               accessibilityRole="button"
-              accessibilityLabel="Excluir agendamento cancelado da agenda"
+              accessibilityLabel={isExpanded ? 'Fechar ações do atendimento' : 'Abrir ações do atendimento'}
+              accessibilityState={{ expanded: isExpanded }}
             >
-              <Ionicons name="trash-outline" size={16} color={colors.darkGray} />
+              <Animated.View style={animatedEditIconStyle}>
+                <Ionicons name="pencil-outline" size={17} color={colors.primary} />
+              </Animated.View>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.cardDetailsRow}>
+          <View style={styles.cardMainInfo}>
+            <Text style={styles.cardTitle} numberOfLines={2}>{item.clientName || 'Cliente'}</Text>
+            <Text style={styles.cardSubtitle} numberOfLines={2}>
+              {getAppointmentServiceName(item) || 'Serviço'}
+            </Text>
+          </View>
+          {googleSyncLabels[item.googleSyncStatus] && (
+            <View style={[
+              styles.googleSyncBadge,
+              { borderColor: googleSyncColors[item.googleSyncStatus] || colors.border },
+            ]}>
+              <Ionicons
+                name={item.googleSyncStatus === 'failed' ? 'cloud-offline-outline' : 'cloud-done-outline'}
+                size={13}
+                color={googleSyncColors[item.googleSyncStatus] || colors.darkGray}
+              />
+              <Text
+                numberOfLines={2}
+                style={[
+                  styles.googleSyncBadgeText,
+                  { color: googleSyncColors[item.googleSyncStatus] || colors.darkGray },
+                ]}
+              >
+                {googleSyncLabels[item.googleSyncStatus]}
+              </Text>
+            </View>
           )}
         </View>
-      </View>
 
-      <Text style={styles.cardTitle}>{item.clientName || 'Cliente'}</Text>
-      <Text style={styles.cardSubtitle}>{getAppointmentServiceName(item) || 'Serviço'}</Text>
-      {googleSyncLabels[item.googleSyncStatus] && (
-        <View style={[
-          styles.googleSyncBadge,
-          { borderColor: googleSyncColors[item.googleSyncStatus] || colors.border },
-        ]}>
-          <Ionicons
-            name={item.googleSyncStatus === 'failed' ? 'cloud-offline-outline' : 'cloud-done-outline'}
-            size={13}
-            color={googleSyncColors[item.googleSyncStatus] || colors.darkGray}
-          />
-          <Text style={[
-            styles.googleSyncBadgeText,
-            { color: googleSyncColors[item.googleSyncStatus] || colors.darkGray },
-          ]}>
-            {googleSyncLabels[item.googleSyncStatus]}
-          </Text>
-        </View>
-      )}
-      <View style={styles.cardFinanceRow}>
-        <Text style={styles.cardFinanceText}>Total: {formatCurrency(item.price)}</Text>
-        <Text style={styles.cardFinanceText}>Sinal: {formatCurrency(item.depositAmount)}</Text>
-        <Text style={styles.cardFinanceText}>
-          Falta pagar: {formatCurrency(calculateRemainingAmount(item.price, item.depositAmount))}
-        </Text>
-      </View>
-
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => openEditModal(item)}>
-          <Text style={styles.actionButtonText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.completeButton]}
-          onPress={() => handleStatusChange(item.id, 'completed')}
-        >
-          <Text style={styles.actionButtonText}>Concluir</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.cancelButton]}
-          onPress={() => handleStatusChange(item.id, 'canceled')}
-        >
-          <Text style={styles.actionButtonText}>Cancelar</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+        {isExpanded && (
+          <Animated.View style={[styles.actionMenu, animatedMenuStyle]}>
+            {!isConfirmingDelete ? (
+              <>
+                <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(item)}>
+                  <Ionicons name="create-outline" size={18} color={colors.primary} />
+                  <Text style={styles.actionMenuText}>Editar agendamento</Text>
+                </TouchableOpacity>
+                {item.status === 'scheduled' && (
+                  <TouchableOpacity
+                    style={styles.actionMenuItem}
+                    onPress={() => handleStatusChange(item.id, 'completed')}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                    <Text style={styles.actionMenuText}>Atendimento concluído</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.actionMenuItem}
+                  onPress={() => openDeleteConfirmation(item.id)}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                  <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
+                    Excluir atendimento
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.deleteConfirmation}>
+                <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
+                <Text style={styles.deleteConfirmationText}>
+                  Ele sairá da agenda, mas continuará registrado no histórico como cancelado.
+                </Text>
+                <View style={styles.deleteConfirmationActions}>
+                  <TouchableOpacity
+                    style={styles.deleteConfirmationSecondaryButton}
+                    onPress={closeDeleteConfirmation}
+                    disabled={isDeleting}
+                  >
+                    <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
+                    onPress={() => handleDeleteAppointment(item)}
+                    disabled={isDeleting}
+                  >
+                    <Text style={styles.deleteConfirmationButtonText}>
+                      {isDeleting ? 'Excluindo...' : 'Excluir atendimento'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </Animated.View>
+        )}
+      </Animated.View>
+    );
+  };
 
   const renderEmptyAgenda = () => (
     <View style={styles.emptyState}>
@@ -1014,7 +1395,7 @@ const AgendaScreen = () => {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
-        <TouchableOpacity style={styles.dayButton} onPress={() => setShowDayPicker(true)}>
+        <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
           <Ionicons name="calendar-outline" size={18} color={colors.primary} />
           <Text style={styles.dayButtonText}>{formatDateLabel(selectedDate)}</Text>
         </TouchableOpacity>
@@ -1027,9 +1408,12 @@ const AgendaScreen = () => {
         title="Escolher dia"
         iosDisplay="inline"
         useAppPicker
+        markedDates={markedDates}
+        onVisibleMonthChange={handleVisibleMonthChange}
         onCancel={() => setShowDayPicker(false)}
         onConfirm={(pickedDate) => {
           setShowDayPicker(false);
+          setVisibleCalendarMonth(new Date(pickedDate.getFullYear(), pickedDate.getMonth(), 1));
           setSelectedDate(pickedDate);
         }}
       />
@@ -1392,16 +1776,19 @@ const styles = StyleSheet.create({
   cardHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
+    flexShrink: 0,
   },
   cardTime: {
+    flex: 1,
+    marginRight: 8,
     color: colors.text,
     fontWeight: '700',
     fontSize: 15,
   },
   statusBadge: {
     borderRadius: 999,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
   },
   statusBadgeText: {
@@ -1410,28 +1797,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  removeCanceledButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  editActionsButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.white,
   },
+  editActionsButtonExpanded: {
+    borderColor: colors.primary,
+    backgroundColor: colors.inputBackground,
+  },
+  cardDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cardMainInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
   cardTitle: {
     fontSize: 16,
     color: colors.text,
     fontWeight: '700',
+    lineHeight: 21,
   },
   cardSubtitle: {
     color: colors.darkGray,
     marginTop: 2,
+    fontSize: 13,
+    lineHeight: 18,
   },
   googleSyncBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
+    maxWidth: '44%',
+    flexShrink: 1,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 8,
@@ -1441,41 +1845,81 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   googleSyncBadgeText: {
+    flexShrink: 1,
     fontSize: 11,
     fontWeight: '700',
   },
-  cardFinanceRow: {
+  actionMenu: {
+    marginTop: 14,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  actionMenuItem: {
+    minHeight: 44,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 10,
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 4,
+    borderRadius: 10,
   },
-  cardFinanceText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
+  actionMenuText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
-  cardActions: {
+  destructiveActionText: {
+    color: colors.error,
+  },
+  deleteConfirmation: {
+    paddingTop: 8,
+  },
+  deleteConfirmationTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  deleteConfirmationText: {
+    marginTop: 5,
+    color: colors.darkGray,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  deleteConfirmationActions: {
     marginTop: 12,
     flexDirection: 'row',
     gap: 8,
   },
-  actionButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+  deleteConfirmationSecondaryButton: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
   },
-  completeButton: {
-    backgroundColor: colors.success,
+  deleteConfirmationSecondaryText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
   },
-  cancelButton: {
+  deleteConfirmationButton: {
+    flex: 1.4,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 10,
     backgroundColor: colors.error,
   },
-  actionButtonText: {
+  deleteConfirmationButtonText: {
     color: colors.white,
-    fontWeight: '600',
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   emptyState: {
     alignItems: 'center',

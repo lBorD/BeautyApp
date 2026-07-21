@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,6 +81,12 @@ const clampDate = (date, minimumDate, maximumDate) => {
 
 const formatNumber = (value) => String(value).padStart(2, '0');
 
+const getDateKey = (date) => [
+  date.getFullYear(),
+  formatNumber(date.getMonth() + 1),
+  formatNumber(date.getDate()),
+].join('-');
+
 const DateTimePickerModal = ({
   visible,
   value,
@@ -94,10 +100,13 @@ const DateTimePickerModal = ({
   minuteInterval,
   useAppPicker = false,
   inlineSheet = false,
+  markedDates = [],
+  onVisibleMonthChange,
   onCancel,
   onConfirm,
 }) => {
   const insets = useSafeAreaInsets();
+  const visibleMonthChangeRef = useRef(onVisibleMonthChange);
   const [draftValue, setDraftValue] = useState(() => (isValidDate(value) ? value : new Date()));
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const initialDate = isValidDate(value) ? value : new Date();
@@ -107,6 +116,9 @@ const DateTimePickerModal = ({
   const safeValueTime = safeValue.getTime();
   const resolvedIosDisplay = iosDisplay || (mode === 'time' ? 'spinner' : 'inline');
   const monthDays = useMemo(() => getMonthMatrix(visibleMonth), [visibleMonth]);
+  const markedDateKeys = useMemo(() => new Set(markedDates.map((markedDate) => (
+    isValidDate(markedDate) ? getDateKey(markedDate) : String(markedDate)
+  ))), [markedDates]);
   const minuteOptions = useMemo(() => {
     const interval = Number(minuteInterval || 5);
     const safeInterval = interval > 0 && interval <= 30 ? interval : 5;
@@ -114,10 +126,16 @@ const DateTimePickerModal = ({
   }, [minuteInterval]);
 
   useEffect(() => {
+    visibleMonthChangeRef.current = onVisibleMonthChange;
+  }, [onVisibleMonthChange]);
+
+  useEffect(() => {
     if (visible) {
       const nextValue = new Date(safeValueTime);
+      const nextMonth = new Date(nextValue.getFullYear(), nextValue.getMonth(), 1);
       setDraftValue(nextValue);
-      setVisibleMonth(new Date(nextValue.getFullYear(), nextValue.getMonth(), 1));
+      setVisibleMonth(nextMonth);
+      visibleMonthChangeRef.current?.(nextMonth);
     }
   }, [safeValueTime, visible]);
 
@@ -170,19 +188,19 @@ const DateTimePickerModal = ({
   };
 
   const changeMonth = (direction) => {
-    setVisibleMonth((previousMonth) => {
-      const nextMonth = new Date(previousMonth);
-      nextMonth.setMonth(previousMonth.getMonth() + direction);
-      return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1);
-    });
+    const nextMonth = new Date(visibleMonth);
+    nextMonth.setMonth(visibleMonth.getMonth() + direction);
+    const normalizedMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1);
+    setVisibleMonth(normalizedMonth);
+    onVisibleMonthChange?.(normalizedMonth);
   };
 
   const changeYear = (direction) => {
-    setVisibleMonth((previousMonth) => {
-      const nextMonth = new Date(previousMonth);
-      nextMonth.setFullYear(previousMonth.getFullYear() + direction);
-      return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1);
-    });
+    const nextMonth = new Date(visibleMonth);
+    nextMonth.setFullYear(visibleMonth.getFullYear() + direction);
+    const normalizedMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1);
+    setVisibleMonth(normalizedMonth);
+    onVisibleMonthChange?.(normalizedMonth);
   };
 
   const renderAppDatePicker = () => (
@@ -217,6 +235,7 @@ const DateTimePickerModal = ({
           const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
           const isSelected = isSameDay(day, draftValue);
           const isDisabled = isBeforeMinDate(day, minimumDate) || isAfterMaxDate(day, maximumDate);
+          const isMarked = markedDateKeys.has(getDateKey(day));
 
           return (
             <TouchableOpacity
@@ -236,6 +255,9 @@ const DateTimePickerModal = ({
                 >
                   {day.getDate()}
                 </Text>
+                {isMarked && (
+                  <View style={[styles.dayMarker, isSelected && styles.dayMarkerSelected]} />
+                )}
               </View>
             </TouchableOpacity>
           );
@@ -556,6 +578,17 @@ const styles = StyleSheet.create({
   },
   dayTextDisabled: {
     color: colors.darkGray,
+  },
+  dayMarker: {
+    position: 'absolute',
+    bottom: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  dayMarkerSelected: {
+    backgroundColor: colors.white,
   },
   timePicker: {
     width: '100%',
