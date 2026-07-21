@@ -639,12 +639,24 @@ const AgendaScreen = () => {
         return true;
       }
 
+      if (conflictConfirmationVisible) {
+        setConflictConfirmationVisible(false);
+        return true;
+      }
+
       closeModal();
       return true;
     });
 
     return () => backSubscription.remove();
-  }, [closeModal, handleStartPickerCancel, modalVisible, showStartPicker, submitting]);
+  }, [
+    closeModal,
+    conflictConfirmationVisible,
+    handleStartPickerCancel,
+    modalVisible,
+    showStartPicker,
+    submitting,
+  ]);
 
   const handleDepositPercentPress = (percent) => {
     const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
@@ -706,6 +718,8 @@ const AgendaScreen = () => {
   };
 
   const showAppointmentConflictFeedback = () => {
+    setShowStartPicker(false);
+    setStartPickerMode('date');
     setConflictConfirmationVisible(true);
   };
 
@@ -931,37 +945,58 @@ const AgendaScreen = () => {
     </View>
   );
 
-  const renderInlineFeedback = () => {
+  const renderConflictConfirmation = () => {
     if (!conflictConfirmationVisible) {
       return null;
     }
 
     return (
-      <View style={[styles.inlineFeedback, { borderLeftColor: colors.warning }]}>
-        <View style={styles.inlineFeedbackHeader}>
-          <Ionicons name="alert-circle" size={18} color={colors.warning} />
-          <Text style={styles.inlineFeedbackTitle}>Conflito de horário</Text>
-        </View>
-        <Text style={styles.inlineFeedbackMessage}>
-          Já existe outro agendamento neste horário. Você pode ajustar o horário ou salvar mesmo assim.
-        </Text>
-        <View style={styles.inlineFeedbackActions}>
-          <TouchableOpacity
-            style={[styles.inlineFeedbackAction, styles.inlineFeedbackSecondaryAction]}
-            onPress={() => setConflictConfirmationVisible(false)}
-            disabled={submitting}
-          >
-            <Text style={styles.inlineFeedbackSecondaryActionText}>Ajustar horário</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.inlineFeedbackAction, styles.inlineFeedbackPrimaryAction]}
-            onPress={() => handleSaveAppointment(true)}
-            disabled={submitting}
-          >
-            <Text style={styles.inlineFeedbackPrimaryActionText}>
-              {submitting ? 'Salvando...' : 'Agendar mesmo assim'}
-            </Text>
-          </TouchableOpacity>
+      <View style={styles.conflictConfirmationOverlay} accessibilityViewIsModal>
+        <TouchableOpacity
+          style={styles.conflictConfirmationBackdrop}
+          activeOpacity={1}
+          onPress={() => setConflictConfirmationVisible(false)}
+          disabled={submitting}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar e ajustar horário"
+        />
+        <View style={styles.conflictConfirmationCard}>
+          <View style={styles.conflictConfirmationIcon}>
+            <Ionicons name="alert-circle" size={28} color={colors.warning} />
+          </View>
+          <Text style={styles.conflictConfirmationTitle}>Conflito de horário</Text>
+          <Text style={styles.conflictConfirmationMessage}>
+            Já existe outro agendamento nesse horário. Deseja agendar mesmo assim?
+          </Text>
+          <Text style={styles.conflictConfirmationHint}>
+            Você pode voltar para alterar a data ou o horário sem perder o que preencheu.
+          </Text>
+          <View style={styles.conflictConfirmationActions}>
+            <TouchableOpacity
+              style={[
+                styles.conflictConfirmationAction,
+                styles.conflictConfirmationSecondaryAction,
+                submitting && styles.disabledButton,
+              ]}
+              onPress={() => setConflictConfirmationVisible(false)}
+              disabled={submitting}
+            >
+              <Text style={styles.conflictConfirmationSecondaryActionText}>Voltar e ajustar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.conflictConfirmationAction,
+                styles.conflictConfirmationPrimaryAction,
+                submitting && styles.disabledButton,
+              ]}
+              onPress={() => handleSaveAppointment(true)}
+              disabled={submitting}
+            >
+              <Text style={styles.conflictConfirmationPrimaryActionText}>
+                {submitting ? 'Salvando...' : 'Agendar mesmo assim'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -1221,8 +1256,6 @@ const AgendaScreen = () => {
                 onChangeText={(value) => setForm((prev) => ({ ...prev, notes: value }))}
               />
 
-              {renderInlineFeedback()}
-
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
                   style={[
@@ -1244,6 +1277,8 @@ const AgendaScreen = () => {
                 </TouchableOpacity>
               </View>
             </ScrollView>
+
+            {renderConflictConfirmation()}
           </View>
 
           <DateTimePickerModal
@@ -1690,61 +1725,85 @@ const styles = StyleSheet.create({
     color: colors.darkGray,
     fontSize: 12,
   },
-  inlineFeedback: {
-    marginTop: 12,
-    borderLeftWidth: 4,
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: colors.inputBackground,
-  },
-  inlineFeedbackHeader: {
-    flexDirection: 'row',
+  conflictConfirmationOverlay: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    backgroundColor: colors.overlay,
+    zIndex: 30,
+    elevation: 30,
   },
-  inlineFeedbackTitle: {
-    flex: 1,
+  conflictConfirmationBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  conflictConfirmationCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 20,
+    padding: 22,
+    backgroundColor: colors.white,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  conflictConfirmationIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.inputBackground,
+    marginBottom: 14,
+  },
+  conflictConfirmationTitle: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 19,
     fontWeight: '800',
   },
-  inlineFeedbackMessage: {
-    marginTop: 6,
+  conflictConfirmationMessage: {
+    marginTop: 8,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 21,
+  },
+  conflictConfirmationHint: {
+    marginTop: 8,
     color: colors.darkGray,
     fontSize: 13,
     lineHeight: 18,
   },
-  inlineFeedbackActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+  conflictConfirmationActions: {
+    marginTop: 20,
+    gap: 10,
   },
-  inlineFeedbackAction: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 8,
+  conflictConfirmationAction: {
+    minHeight: 46,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  inlineFeedbackSecondaryAction: {
+  conflictConfirmationSecondaryAction: {
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.white,
   },
-  inlineFeedbackPrimaryAction: {
+  conflictConfirmationPrimaryAction: {
     backgroundColor: colors.primary,
   },
-  inlineFeedbackSecondaryActionText: {
+  conflictConfirmationSecondaryActionText: {
     color: colors.primary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
   },
-  inlineFeedbackPrimaryActionText: {
+  conflictConfirmationPrimaryActionText: {
     color: colors.white,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
   },
