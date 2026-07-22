@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   UIManager,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +39,9 @@ const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
 const CALENDAR_LOOKAHEAD_DAYS = 90;
 const ACTION_ANIMATION_DURATION = 180;
+const ACTION_POPOVER_MAX_WIDTH = 268;
+const ACTION_POPOVER_ESTIMATED_HEIGHT = 210;
+const ACTION_POPOVER_SCREEN_MARGIN = 16;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -297,7 +301,10 @@ const createBaseSlots = (date) => {
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const bottomInset = Math.max(insets.bottom, 8);
+  const screenRef = useRef(null);
+  const actionButtonRefs = useRef({});
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() => {
@@ -324,6 +331,7 @@ const AgendaScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [expandedAppointmentId, setExpandedAppointmentId] = useState(null);
+  const [actionPopoverPosition, setActionPopoverPosition] = useState(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
   const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
   const [statusAnimationAppointmentId, setStatusAnimationAppointmentId] = useState(null);
@@ -365,6 +373,14 @@ const AgendaScreen = () => {
     });
   }, [reduceMotionEnabled]);
 
+  const closeAppointmentActions = useCallback(() => {
+    actionMenuAnimation.stopAnimation();
+    actionMenuAnimation.setValue(0);
+    setExpandedAppointmentId(null);
+    setActionPopoverPosition(null);
+    setDeleteConfirmationId(null);
+  }, [actionMenuAnimation]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -381,6 +397,19 @@ const AgendaScreen = () => {
       subscription?.remove?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (expandedAppointmentId === null) {
+      return undefined;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeAppointmentActions();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [closeAppointmentActions, expandedAppointmentId]);
 
   const selectedServices = useMemo(
     () => form.serviceIds
@@ -666,8 +695,7 @@ const AgendaScreen = () => {
     }
 
     animateNextLayout();
-    setExpandedAppointmentId(null);
-    setDeleteConfirmationId(null);
+    closeAppointmentActions();
     loadAgendaForDate(selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
@@ -770,8 +798,7 @@ const AgendaScreen = () => {
 
   const openEditModal = async (appointment) => {
     animateNextLayout();
-    setExpandedAppointmentId(null);
-    setDeleteConfirmationId(null);
+    closeAppointmentActions();
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
     setClientSearch('');
@@ -1043,9 +1070,7 @@ const AgendaScreen = () => {
     }
 
     animateNextLayout();
-    setExpandedAppointmentId(null);
-    setDeleteConfirmationId(null);
-    actionMenuAnimation.setValue(0);
+    closeAppointmentActions();
 
     if (nextStatus === 'completed' && !reduceMotionEnabled) {
       setStatusAnimationAppointmentId(appointmentId);
@@ -1085,18 +1110,10 @@ const AgendaScreen = () => {
     }
   };
 
-  const toggleAppointmentActions = (appointmentId) => {
-    const willExpand = String(expandedAppointmentId) !== String(appointmentId);
-    animateNextLayout();
+  const showAppointmentActions = (appointment, position) => {
+    setExpandedAppointmentId(appointment.id);
+    setActionPopoverPosition(position);
     setDeleteConfirmationId(null);
-
-    if (!willExpand) {
-      setExpandedAppointmentId(null);
-      actionMenuAnimation.setValue(0);
-      return;
-    }
-
-    setExpandedAppointmentId(appointmentId);
 
     if (reduceMotionEnabled) {
       actionMenuAnimation.setValue(1);
@@ -1109,6 +1126,82 @@ const AgendaScreen = () => {
       duration: ACTION_ANIMATION_DURATION,
       useNativeDriver: true,
     }).start();
+  };
+
+  const toggleAppointmentActions = (appointment) => {
+    if (String(expandedAppointmentId) === String(appointment.id)) {
+      closeAppointmentActions();
+      return;
+    }
+
+    closeAppointmentActions();
+    const actionButton = actionButtonRefs.current[String(appointment.id)];
+
+    const positionPopover = (buttonX, buttonY, buttonWidth, buttonHeight, rootX, rootY, rootWidth, rootHeight) => {
+      const popoverWidth = Math.min(
+        ACTION_POPOVER_MAX_WIDTH,
+        rootWidth - ACTION_POPOVER_SCREEN_MARGIN * 2,
+      );
+      const relativeButtonX = buttonX - rootX;
+      const relativeButtonY = buttonY - rootY;
+      const left = Math.min(
+        Math.max(
+          ACTION_POPOVER_SCREEN_MARGIN,
+          relativeButtonX + buttonWidth - popoverWidth,
+        ),
+        rootWidth - popoverWidth - ACTION_POPOVER_SCREEN_MARGIN,
+      );
+      const belowTop = relativeButtonY + buttonHeight + 2;
+      const availableBottom = rootHeight - bottomInset - 8;
+      const opensBelow = belowTop + ACTION_POPOVER_ESTIMATED_HEIGHT <= availableBottom;
+
+      showAppointmentActions(appointment, {
+        left,
+        top: opensBelow ? belowTop : undefined,
+        bottom: opensBelow ? undefined : rootHeight - relativeButtonY + 2,
+        width: popoverWidth,
+        placement: opensBelow ? 'below' : 'above',
+      });
+    };
+
+    if (!actionButton?.measureInWindow) {
+      showAppointmentActions(appointment, {
+        left: Math.max(ACTION_POPOVER_SCREEN_MARGIN, windowWidth - ACTION_POPOVER_MAX_WIDTH - 16),
+        top: insets.top + 72,
+        width: Math.min(ACTION_POPOVER_MAX_WIDTH, windowWidth - 32),
+        placement: 'below',
+      });
+      return;
+    }
+
+    actionButton.measureInWindow((buttonX, buttonY, buttonWidth, buttonHeight) => {
+      if (!screenRef.current?.measureInWindow) {
+        positionPopover(
+          buttonX,
+          buttonY,
+          buttonWidth,
+          buttonHeight,
+          0,
+          0,
+          windowWidth,
+          windowHeight,
+        );
+        return;
+      }
+
+      screenRef.current.measureInWindow((rootX, rootY, rootWidth, rootHeight) => {
+        positionPopover(
+          buttonX,
+          buttonY,
+          buttonWidth,
+          buttonHeight,
+          rootX,
+          rootY,
+          rootWidth,
+          rootHeight,
+        );
+      });
+    });
   };
 
   const openDeleteConfirmation = (appointmentId) => {
@@ -1132,9 +1225,7 @@ const AgendaScreen = () => {
       await updateAppointmentStatus(appointment.id, 'canceled');
       animateNextLayout();
       setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
-      setExpandedAppointmentId(null);
-      setDeleteConfirmationId(null);
-      actionMenuAnimation.setValue(0);
+      closeAppointmentActions();
       refreshCalendarMarksForDates([appointment.startAt]);
     } catch (error) {
       Alert.alert('Erro', error.response?.data?.error || 'Não foi possível excluir o atendimento.');
@@ -1143,26 +1234,129 @@ const AgendaScreen = () => {
     }
   };
 
+  const renderAppointmentActionsPopover = () => {
+    const appointment = appointments.find((item) => (
+      String(item.id) === String(expandedAppointmentId)
+    ));
+
+    if (!appointment || !actionPopoverPosition) {
+      return null;
+    }
+
+    const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
+    const isDeleting = String(deletingAppointmentId) === String(appointment.id);
+    const opensBelow = actionPopoverPosition.placement === 'below';
+    const animatedPopoverStyle = {
+      opacity: actionMenuAnimation,
+      transform: [
+        {
+          translateX: actionMenuAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [8, 0],
+          }),
+        },
+        {
+          translateY: actionMenuAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [opensBelow ? -6 : 6, 0],
+          }),
+        },
+        {
+          scale: actionMenuAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.94, 1],
+          }),
+        },
+      ],
+    };
+
+    return (
+      <View style={styles.actionPopoverOverlay}>
+        <TouchableOpacity
+          style={styles.actionPopoverBackdrop}
+          activeOpacity={1}
+          onPress={closeAppointmentActions}
+          accessibilityRole="button"
+          accessibilityLabel="Fechar ações do atendimento"
+        />
+        <Animated.View
+          accessibilityViewIsModal
+          style={[
+            styles.actionPopover,
+            {
+              left: actionPopoverPosition.left,
+              top: actionPopoverPosition.top,
+              bottom: actionPopoverPosition.bottom,
+              width: actionPopoverPosition.width,
+            },
+            animatedPopoverStyle,
+          ]}
+        >
+          {!isConfirmingDelete ? (
+            <>
+              <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(appointment)}>
+                <Ionicons name="create-outline" size={18} color={colors.primary} />
+                <Text style={styles.actionMenuText}>Editar agendamento</Text>
+              </TouchableOpacity>
+              {appointment.status === 'scheduled' && (
+                <TouchableOpacity
+                  style={styles.actionMenuItem}
+                  onPress={() => handleStatusChange(appointment.id, 'completed')}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                  <Text style={styles.actionMenuText}>Atendimento concluído</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.actionMenuItem}
+                onPress={() => openDeleteConfirmation(appointment.id)}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.error} />
+                <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
+                  Excluir atendimento
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.deleteConfirmation}>
+              <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
+              <Text style={styles.deleteConfirmationText}>
+                Ele sairá da agenda, mas continuará registrado no histórico como cancelado.
+              </Text>
+              <View style={styles.deleteConfirmationActions}>
+                <TouchableOpacity
+                  style={styles.deleteConfirmationSecondaryButton}
+                  onPress={closeDeleteConfirmation}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
+                  onPress={() => handleDeleteAppointment(appointment)}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.deleteConfirmationButtonText}>
+                    {isDeleting ? 'Excluindo...' : 'Excluir atendimento'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </Animated.View>
+      </View>
+    );
+  };
+
   const renderAppointmentItem = ({ item }) => {
     const isExpanded = String(expandedAppointmentId) === String(item.id);
-    const isConfirmingDelete = String(deleteConfirmationId) === String(item.id);
-    const isDeleting = String(deletingAppointmentId) === String(item.id);
     const isAnimatingStatus = String(statusAnimationAppointmentId) === String(item.id);
-    const animatedMenuStyle = {
-      opacity: actionMenuAnimation,
-      transform: [{
-        translateY: actionMenuAnimation.interpolate({
-          inputRange: [0, 1],
-          outputRange: [6, 0],
-        }),
-      }],
-    };
-    const animatedEditIconStyle = isExpanded ? {
+    const animatedActionIconStyle = isExpanded ? {
       transform: [
         {
           rotate: actionMenuAnimation.interpolate({
             inputRange: [0, 1],
-            outputRange: ['0deg', '-8deg'],
+            outputRange: ['0deg', '90deg'],
           }),
         },
         {
@@ -1199,14 +1393,23 @@ const AgendaScreen = () => {
               <Text style={styles.statusBadgeText}>{statusLabels[item.status] || item.status}</Text>
             </View>
             <TouchableOpacity
-              style={[styles.editActionsButton, isExpanded && styles.editActionsButtonExpanded]}
-              onPress={() => toggleAppointmentActions(item.id)}
+              ref={(node) => {
+                const itemKey = String(item.id);
+                if (node) {
+                  actionButtonRefs.current[itemKey] = node;
+                } else {
+                  delete actionButtonRefs.current[itemKey];
+                }
+              }}
+              style={styles.actionTriggerButton}
+              hitSlop={{ top: 4, right: 4, bottom: 4, left: 4 }}
+              onPress={() => toggleAppointmentActions(item)}
               accessibilityRole="button"
               accessibilityLabel={isExpanded ? 'Fechar ações do atendimento' : 'Abrir ações do atendimento'}
               accessibilityState={{ expanded: isExpanded }}
             >
-              <Animated.View style={animatedEditIconStyle}>
-                <Ionicons name="pencil-outline" size={17} color={colors.primary} />
+              <Animated.View style={animatedActionIconStyle}>
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.primary} />
               </Animated.View>
             </TouchableOpacity>
           </View>
@@ -1242,61 +1445,6 @@ const AgendaScreen = () => {
           )}
         </View>
 
-        {isExpanded && (
-          <Animated.View style={[styles.actionMenu, animatedMenuStyle]}>
-            {!isConfirmingDelete ? (
-              <>
-                <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(item)}>
-                  <Ionicons name="create-outline" size={18} color={colors.primary} />
-                  <Text style={styles.actionMenuText}>Editar agendamento</Text>
-                </TouchableOpacity>
-                {item.status === 'scheduled' && (
-                  <TouchableOpacity
-                    style={styles.actionMenuItem}
-                    onPress={() => handleStatusChange(item.id, 'completed')}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
-                    <Text style={styles.actionMenuText}>Atendimento concluído</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => openDeleteConfirmation(item.id)}
-                >
-                  <Ionicons name="trash-outline" size={18} color={colors.error} />
-                  <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
-                    Excluir atendimento
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <View style={styles.deleteConfirmation}>
-                <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
-                <Text style={styles.deleteConfirmationText}>
-                  Ele sairá da agenda, mas continuará registrado no histórico como cancelado.
-                </Text>
-                <View style={styles.deleteConfirmationActions}>
-                  <TouchableOpacity
-                    style={styles.deleteConfirmationSecondaryButton}
-                    onPress={closeDeleteConfirmation}
-                    disabled={isDeleting}
-                  >
-                    <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
-                    onPress={() => handleDeleteAppointment(item)}
-                    disabled={isDeleting}
-                  >
-                    <Text style={styles.deleteConfirmationButtonText}>
-                      {isDeleting ? 'Excluindo...' : 'Excluir atendimento'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </Animated.View>
-        )}
       </Animated.View>
     );
   };
@@ -1392,7 +1540,7 @@ const AgendaScreen = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View ref={screenRef} style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
         <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
@@ -1451,6 +1599,8 @@ const AgendaScreen = () => {
       <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
+
+      {renderAppointmentActionsPopover()}
 
       {modalVisible && (
         <View style={styles.modalOverlay}>
@@ -1764,32 +1914,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 14,
-    marginBottom: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    marginBottom: 9,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 3,
   },
   cardHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
     flexShrink: 0,
   },
   cardTime: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 4,
     color: colors.text,
     fontWeight: '700',
     fontSize: 15,
   },
   statusBadge: {
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
   statusBadgeText: {
     color: colors.white,
@@ -1797,39 +1948,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  editActionsButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  actionTriggerButton: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-  },
-  editActionsButtonExpanded: {
-    borderColor: colors.primary,
-    backgroundColor: colors.inputBackground,
+    backgroundColor: colors.transparent,
   },
   cardDetailsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 8,
   },
   cardMainInfo: {
     flex: 1,
     minWidth: 0,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.text,
     fontWeight: '700',
-    lineHeight: 21,
+    lineHeight: 19,
   },
   cardSubtitle: {
     color: colors.darkGray,
-    marginTop: 2,
+    marginTop: 1,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -1838,8 +1982,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -1849,11 +1993,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  actionMenu: {
-    marginTop: 14,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+  actionPopoverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 18,
+    elevation: 18,
+  },
+  actionPopoverBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  actionPopover: {
+    position: 'absolute',
+    padding: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 20,
   },
   actionMenuItem: {
     minHeight: 44,
