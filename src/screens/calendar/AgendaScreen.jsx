@@ -77,7 +77,7 @@ const sortAppointments = (items) => [...items].sort(
   (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
 );
 
-const filterVisibleAgendaAppointments = (items) => (
+const filterNonCanceledAppointments = (items) => (
   items.filter((item) => !isCanceledAppointment(item))
 );
 
@@ -558,8 +558,7 @@ const AgendaScreen = () => {
     try {
       const { from, to } = buildDayUtcRange(date);
       const data = await listAppointments({ from, to });
-      const visibleAppointments = filterVisibleAgendaAppointments(data);
-      setAppointments(sortAppointments(visibleAppointments));
+      setAppointments(sortAppointments(data));
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
       if (!isSessionExpiredError(error)) {
@@ -648,7 +647,7 @@ const AgendaScreen = () => {
 
       try {
         const { from, to } = buildInitialAgendaUtcRange();
-        const futureAppointments = filterVisibleAgendaAppointments(
+        const futureAppointments = filterNonCanceledAppointments(
           await listAppointments({ from, to }),
         );
         const nextAppointment = sortAppointments(futureAppointments)[0];
@@ -1072,7 +1071,9 @@ const AgendaScreen = () => {
     animateNextLayout();
     closeAppointmentActions();
 
-    if (nextStatus === 'completed' && !reduceMotionEnabled) {
+    const isRestoring = isCanceledAppointment(previousItem) && nextStatus === 'scheduled';
+
+    if ((nextStatus === 'completed' || isRestoring) && !reduceMotionEnabled) {
       setStatusAnimationAppointmentId(appointmentId);
       statusChangeAnimation.setValue(0);
       Animated.timing(statusChangeAnimation, {
@@ -1089,17 +1090,14 @@ const AgendaScreen = () => {
     try {
       const updated = await updateAppointmentStatus(appointmentId, nextStatus);
 
-      if (nextStatus === 'canceled' || isCanceledAppointment(updated)) {
-        animateNextLayout();
-        setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointmentId)));
-        refreshCalendarMarksForDates([previousItem.startAt]);
-        return;
-      }
-
       animateNextLayout();
       setAppointments((prev) => sortAppointments(prev.map((item) => (
         String(item.id) === String(appointmentId) ? updated : item
       ))));
+
+      if (isCanceledAppointment(previousItem) !== isCanceledAppointment(updated)) {
+        refreshCalendarMarksForDates([previousItem.startAt, updated.startAt]);
+      }
     } catch (error) {
       animateNextLayout();
       setAppointments((prev) => sortAppointments(prev.map((item) => (
@@ -1222,9 +1220,11 @@ const AgendaScreen = () => {
     setDeletingAppointmentId(appointment.id);
 
     try {
-      await updateAppointmentStatus(appointment.id, 'canceled');
+      const canceledAppointment = await updateAppointmentStatus(appointment.id, 'canceled');
       animateNextLayout();
-      setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
+      setAppointments((prev) => sortAppointments(prev.map((item) => (
+        String(item.id) === String(appointment.id) ? canceledAppointment : item
+      ))));
       closeAppointmentActions();
       refreshCalendarMarksForDates([appointment.startAt]);
     } catch (error) {
@@ -1292,7 +1292,15 @@ const AgendaScreen = () => {
             animatedPopoverStyle,
           ]}
         >
-          {!isConfirmingDelete ? (
+          {appointment.status === 'canceled' ? (
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => handleStatusChange(appointment.id, 'scheduled')}
+            >
+              <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
+              <Text style={styles.actionMenuText}>Restaurar atendimento</Text>
+            </TouchableOpacity>
+          ) : !isConfirmingDelete ? (
             <>
               <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(appointment)}>
                 <Ionicons name="create-outline" size={18} color={colors.primary} />
@@ -1321,7 +1329,7 @@ const AgendaScreen = () => {
             <View style={styles.deleteConfirmation}>
               <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
               <Text style={styles.deleteConfirmationText}>
-                Ele sairá da agenda, mas continuará registrado no histórico como cancelado.
+                Ele ficará cancelado, sem ocupar o horário, e poderá ser restaurado depois.
               </Text>
               <View style={styles.deleteConfirmationActions}>
                 <TouchableOpacity
@@ -1351,6 +1359,7 @@ const AgendaScreen = () => {
   const renderAppointmentItem = ({ item }) => {
     const isExpanded = String(expandedAppointmentId) === String(item.id);
     const isAnimatingStatus = String(statusAnimationAppointmentId) === String(item.id);
+    const isCanceled = isCanceledAppointment(item);
     const animatedActionIconStyle = isExpanded ? {
       transform: [
         {
@@ -1371,6 +1380,7 @@ const AgendaScreen = () => {
     return (
       <Animated.View style={[
         styles.card,
+        isCanceled && styles.canceledCard,
         isAnimatingStatus && {
           opacity: statusChangeAnimation.interpolate({
             inputRange: [0, 1],
@@ -1385,7 +1395,7 @@ const AgendaScreen = () => {
         },
       ]}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTime} numberOfLines={1}>
+          <Text style={[styles.cardTime, isCanceled && styles.canceledCardText]} numberOfLines={1}>
             {formatTime(item.startAt)} - {formatTime(item.endAt)}
           </Text>
           <View style={styles.cardHeaderActions}>
@@ -1417,8 +1427,10 @@ const AgendaScreen = () => {
 
         <View style={styles.cardDetailsRow}>
           <View style={styles.cardMainInfo}>
-            <Text style={styles.cardTitle} numberOfLines={2}>{item.clientName || 'Cliente'}</Text>
-            <Text style={styles.cardSubtitle} numberOfLines={2}>
+            <Text style={[styles.cardTitle, isCanceled && styles.canceledCardText]} numberOfLines={2}>
+              {item.clientName || 'Cliente'}
+            </Text>
+            <Text style={[styles.cardSubtitle, isCanceled && styles.canceledCardText]} numberOfLines={2}>
               {getAppointmentServiceName(item) || 'Serviço'}
             </Text>
           </View>
@@ -1917,6 +1929,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 10,
     marginBottom: 9,
+  },
+  canceledCard: {
+    backgroundColor: colors.inputBackground,
+    borderStyle: 'dashed',
+  },
+  canceledCardText: {
+    color: colors.darkGray,
   },
   cardHeaderRow: {
     flexDirection: 'row',
