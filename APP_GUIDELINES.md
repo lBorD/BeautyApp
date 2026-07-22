@@ -74,7 +74,7 @@ Regras visuais:
 - espaçamento generoso
 - ação principal clara e óbvia em cada tela
 
-Na Agenda, os cards devem priorizar horário, status, cliente, serviço e sincronização Google. Ações secundárias ficam recolhidas sob um lápis com área de toque acessível; somente um card pode permanecer expandido. Confirmações abertas dentro do fluxo de agendamento devem ser inline para não empilhar modais nativos no iOS.
+Na Agenda, os cards devem priorizar horário, status, cliente, serviço e sincronização Google. Ações secundárias ficam recolhidas sob um acionador compacto de “mais ações”, com área de toque acessível, e aparecem em um popover inline sobre a lista. Somente um popover pode permanecer aberto. Confirmações abertas dentro do fluxo de agendamento devem ser inline para não empilhar modais nativos no iOS.
 
 ### Velocidade percebida
 
