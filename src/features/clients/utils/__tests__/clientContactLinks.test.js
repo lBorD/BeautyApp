@@ -25,6 +25,8 @@ describe('normalizeBrazilianPhone', () => {
     '+5511999999999abc',
     '++55 11 99999-9999',
     '11+999999999',
+    '441199999999',
+    '4411999999999',
   ])(
     'rejeita telefone incompleto ou fora do contrato: %s',
     (input) => {
