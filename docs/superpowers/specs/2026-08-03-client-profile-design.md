@@ -2,7 +2,7 @@
 
 **Issues:** `lBorD/BeautyApp#104` e `lBorD/api#41`  
 **Data:** 2026-08-03  
-**Estado:** direção aprovada pelo usuário para implementação
+**Estado:** direção aprovada pelo usuário para implementação; foto desativada durante o beta
 
 ## Objetivo
 
@@ -16,7 +16,7 @@ O perfil deve continuar útil quando não houver foto, telefone, observações o
 - próximo atendimento e contexto da cliente acima da ficha cadastral;
 - dados progressivos: mostrar somente campos preenchidos;
 - uma ação principal clara: `Agendar atendimento`;
-- foto opcional, com iniciais como fallback permanente;
+- avatar por iniciais durante o beta, com a futura foto isolada atrás de um contrato de feature;
 - preferências permanentes separadas das observações de cada agendamento;
 - sem métricas financeiras, fidelidade, prontuário, galeria ou CRM amplo.
 
@@ -34,7 +34,7 @@ O perfil deve continuar útil quando não houver foto, telefone, observações o
 ### Hierarquia da tela
 
 1. Barra superior com voltar e `Editar`.
-2. Cabeçalho com foto circular de 96 px ou iniciais, nome completo, telefone quando houver e comando de alterar foto.
+2. Cabeçalho com avatar circular de 96 px por iniciais, nome completo, telefone quando houver e indicação discreta de que a foto chegará depois do beta.
 3. Ações rápidas com área mínima de toque de 44 px:
    - `Agendar` sempre disponível;
    - `WhatsApp` e `Ligar` disponíveis somente quando houver telefone válido;
@@ -62,22 +62,20 @@ O perfil deve continuar útil quando não houver foto, telefone, observações o
 
 - o card selecionado fornece `initialClient`, permitindo renderizar nome e contato antes da rede;
 - se a busca estiver em andamento, somente as seções remotas mostram carregamento; não há spinner de tela inteira;
-- pull-to-refresh atualiza cliente, foto e atendimentos;
+- pull-to-refresh atualiza cliente e atendimentos;
 - erro com dados iniciais mantém o cabeçalho utilizável e mostra tentativa novamente nas seções;
 - erro sem qualquer dado mostra estado de erro com `Tentar novamente`;
 - falha ao abrir WhatsApp ou telefone gera feedback legível;
 - a tela respeita fonte dinâmica, leitor de tela e redução de movimento; nenhuma informação depende apenas de cor.
 
-### Foto
+### Avatar e foto durante o beta
 
-- a usuária pode escolher uma imagem da biblioteca; câmera fica fora do MVP;
-- o app pede permissão da biblioteca somente ao iniciar a ação;
-- a imagem é recortada em proporção 1:1, redimensionada para no máximo 512 × 512 e comprimida em JPEG antes do envio;
-- entrada limitada a 5 MiB e aceita como JPEG, PNG ou WebP; a saída persistida é WebP com no máximo 512 KiB;
-- durante upload, o avatar mostra progresso e as outras áreas do perfil continuam utilizáveis;
-- substituir ou remover foto exige confirmação visual simples;
-- `expo-image` usa cache de disco; `photoUpdatedAt` muda a chave de cache após substituição;
-- seleção/manipulação de foto adiciona código nativo e exige nova build iOS/Android. Não publicar build ou OTA automaticamente.
+- o avatar mostra sempre as iniciais da cliente nesta entrega;
+- tocar no avatar ou na indicação de foto mostra exatamente: `Este app ainda está na versão beta. A funcionalidade de imagem será ativada quando o app estiver pronto para lançamento.`;
+- o app beta não abre biblioteca ou câmera, não pede permissão, não envia nem remove foto e não chama as rotas de imagem;
+- `expo-image`, `expo-image-picker` e `expo-image-manipulator` não entram nesta entrega, evitando alteração nativa e nova build somente por esse recurso;
+- o componente visual e o serviço permanecem desacoplados do mecanismo de armazenamento, para que uma tarefa futura aceite uma fonte remota sem redesenhar o perfil;
+- a ativação futura terá tarefa própria, incluindo experiência, permissões, adaptador S3-compatible, testes e versionamento nativo.
 
 ## Contrato da API
 
@@ -140,11 +138,11 @@ Regras:
 2. A API confirma a cliente por `{ id, userId }` antes de processar o arquivo.
 3. O middleware mantém no máximo 5 MiB em memória e rejeita campos ou arquivos extras.
 4. O processador não confia no MIME declarado: decodifica somente JPEG, PNG ou WebP, limita a entrada a 16 megapixels, aplica orientação, recorta para 512 × 512 e reencoda WebP com qualidade 80 sem EXIF/GPS.
-5. A saída final deve ter no máximo 512 KiB. A persistência usa `upsert`; qualquer falha antes do commit preserva a foto anterior.
+5. A saída final deve ter no máximo 512 KiB. A persistência valida a propriedade e substitui a foto em transação com lock; qualquer falha antes do commit preserva a foto anterior.
 6. `GET /clients/:id/photo` exige JWT e consulta simultaneamente `clientId` e `userId`. Responde WebP com `ETag`, `Cache-Control: private, max-age=86400, must-revalidate` e `X-Content-Type-Options: nosniff`; `If-None-Match` correspondente responde `304` sem corpo.
 7. `DELETE /clients/:id/photo` exige a mesma propriedade e é idempotente, respondendo `204` quando a cliente não possui foto.
 
-O app envia `FormData`, nunca Base64. `expo-image` lê a rota com o header de autenticação atual e cache de disco. O parâmetro `v=photoUpdatedAt` invalida a imagem imediatamente após substituição.
+O app beta não consome essas rotas. Na ativação futura, o cliente enviará `FormData`, nunca Base64, e consumirá `photoUrl` sem conhecer se o adaptador usa PostgreSQL ou S3. O parâmetro `v=photoUpdatedAt` continuará invalidando a imagem após substituição.
 
 ### Banco e desempenho
 
@@ -168,9 +166,9 @@ A mesma entrega adiciona índices `client_photos(userId, clientId)` e `appointme
 
 ## Decisão de armazenamento
 
-O projeto não possui bucket, IAM, secrets ou lifecycle provisionados. Para que a foto funcione nesta entrega sem uma dependência externa incompleta, o MVP usa PostgreSQL `BYTEA` em tabela separada e com saída rigidamente normalizada.
+O projeto não possui bucket, IAM, secrets ou lifecycle provisionados. A API fica tecnicamente preparada e testada com PostgreSQL `BYTEA` em tabela separada e saída rigidamente normalizada, mas a UI beta não ativa nem chama a funcionalidade.
 
-Esse desenho é limitado a um avatar pequeno por cliente. Não serve para originais, galeria ou fotos de procedimentos. Toda leitura e gravação passa por `clientPhotoStorage`, mantendo o contrato HTTP estável para uma futura migração a bucket privado S3-compatible. `multer` e `sharp` devem ser fixados em versões que declarem suporte ao Node 18.20.6 do projeto; atualizar o runtime fica fora desta feature.
+Esse desenho é limitado a um avatar pequeno por cliente. Não serve para originais, galeria ou fotos de procedimentos. Toda leitura e gravação passa por `clientPhotoStorage`; trocar o adaptador por um bucket privado S3-compatible não muda controllers, DTOs ou rotas. `multer` e `sharp` ficam fixados em versões compatíveis com Node 18.20.6; bucket, IAM, secrets, lifecycle e ativação mobile pertencem a uma tarefa futura.
 
 ## Segurança e privacidade
 
@@ -178,7 +176,7 @@ Esse desenho é limitado a um avatar pequeno por cliente. Não serve para origin
 - notas são internas e nunca entram em compartilhamento/WhatsApp;
 - não guardar documentos, cartão, informação clínica detalhada ou fotos de procedimentos no campo genérico;
 - nomes de arquivo fornecidos pelo dispositivo não são persistidos;
-- MIME, conteúdo real, dimensões e tamanho são validados no app e novamente no backend;
+- MIME, conteúdo real, dimensões e tamanho são validados no backend; a validação mobile será adicionada somente quando a foto for ativada;
 - bytes só saem por rota autenticada e com cache privado;
 - nenhum token ou conteúdo binário aparece em logs, respostas de erro ou listagens;
 - ações de foto são idempotentes do ponto de vista do perfil: falha antes da conclusão mantém a foto anterior.
@@ -206,24 +204,24 @@ Esse desenho é limitado a um avatar pequeno por cliente. Não serve para origin
 - ações sem telefone ficam desabilitadas;
 - `Carregar mais` concatena sem duplicar;
 - criação rápida envia cliente e `requestId` à Agenda;
-- seleção cancelada não inicia upload; sucesso conclui e atualiza avatar.
+- toque no avatar mostra a mensagem beta exata e não chama picker, permissão ou endpoint de foto.
 
 ### Validação manual
 
 - iOS e Android: abrir perfil pela lista, voltar, editar e atualizar;
-- testar foto pela biblioteca, substituição e remoção;
-- testar permissões negadas;
+- tocar no avatar e confirmar a mensagem beta exata, sem diálogo de permissão ou requisição de foto;
 - testar WhatsApp instalado/não instalado e ligação;
 - testar cliente sem telefone, foto, observações ou histórico;
 - confirmar que cancelados nunca aparecem nem são requisitados;
 - confirmar leitor de tela, texto ampliado e áreas de toque;
-- validar nova build nativa antes de qualquer distribuição.
+- confirmar que a entrega não adicionou módulo nativo nem alterou o runtime/binário por causa da foto.
 
 ## Entrega e versionamento
 
 - app na branch `feat/BEAUTY-104`;
 - API na branch `feat/BEAUTY-41`;
 - versão visível do app sobe de `1.3.2` para `1.4.0`;
+- `expo.version` e `runtimeVersion` não mudam, pois a foto beta não adiciona dependência nativa;
 - versão da API sobe de `1.2.0` para `1.3.0`;
 - PRs seguem para `develop` e permanecem em `In review` até validação manual;
 - não executar migration de produção, deploy da API, EAS Update ou build sem autorização específica.
