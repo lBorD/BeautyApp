@@ -8,12 +8,17 @@ export function normalizeBrazilianPhone(phone) {
     return null;
   }
 
-  const digits = value.replace(/\D/g, '');
-  if (value.startsWith('+') && !digits.startsWith('55')) {
+  const hasCountryCodePrefix = value.startsWith('+');
+  const isValidFormat = hasCountryCodePrefix
+    ? /^\+55[\d\s().-]*$/.test(value)
+    : /^[\d\s().-]+$/.test(value);
+
+  if (!isValidFormat) {
     return null;
   }
 
-  if (digits.length === 10 || digits.length === 11) {
+  const digits = value.replace(/\D/g, '');
+  if (!hasCountryCodePrefix && (digits.length === 10 || digits.length === 11)) {
     return `55${digits}`;
   }
 
