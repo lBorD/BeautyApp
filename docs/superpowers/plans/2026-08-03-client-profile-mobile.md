@@ -8,6 +8,13 @@
 
 **Tech Stack:** Expo SDK 53, React Native 0.79, React 19, React Navigation 7, Axios, React Native Paper, Jest Expo e React Native Testing Library.
 
+## Checkpoint de execucao - pausa em 2026-08-03
+
+- Tasks 1 e 2 concluidas e revisadas; ultimo commit `6bc8d64`; 3 suites e 32 testes aprovados.
+- Task 3 interrompida antes de qualquer edicao. Retomar por `ClientAvatar.jsx` e `ClientAppointmentCard.jsx`, com testes.
+- Branch `feat/BEAUTY-104` limpa; stash da BEAUTY-101 preservado; sem PR, merge, OTA ou build.
+- A API `lBorD/api#41` ja esta implementada e revisada; nao refazer esse trabalho ao retomar.
+
 ## Global Constraints
 
 - Tela única e contínua; sem abas no perfil.
