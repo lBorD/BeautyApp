@@ -4,11 +4,11 @@ import {
   Alert,
   Animated,
   BackHandler,
-  FlatList,
   LayoutAnimation,
   Platform,
   RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +31,26 @@ import {
   isSameCurrencyAmount,
   roundCurrency,
 } from '../../utils/currency';
+import {
+  AGENDA_MAX_LOOKAHEAD_DAYS,
+  AGENDA_WINDOW_DAYS,
+  addLocalDays,
+  buildAgendaSections,
+  buildAgendaWindow,
+  buildCalendarGridUtcRange,
+  endOfLocalDay,
+  findSectionIndexByKey,
+  getLocalDateKey,
+  getMonthKey,
+  getNextAgendaWindowBlock,
+  isCanceledAppointment,
+  isDayPlaceholder,
+  isWithinWindow,
+  mergeAppointmentsById,
+  sortAppointments,
+  startOfLocalDay,
+  summarizeAgendaSections,
+} from './agendaWindow';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -40,13 +60,11 @@ import {
   updateAppointmentStatus,
 } from '../../services/private/appointmentAPI';
 
-const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
-const CALENDAR_LOOKAHEAD_DAYS = 90;
+const AGENDA_END_REACHED_THRESHOLD = 0.4;
 const ACTION_ANIMATION_DURATION = 180;
 const ACTION_POPOVER_MAX_WIDTH = 268;
 const ACTION_POPOVER_ESTIMATED_HEIGHT = 210;
@@ -68,8 +86,6 @@ const statusColors = {
   completed: colors.success,
 };
 
-const isCanceledAppointment = (appointment) => appointment.status === 'canceled';
-
 const googleSyncLabels = {
   pending: 'Google pendente',
   synced: 'Google sincronizado',
@@ -81,14 +97,6 @@ const googleSyncColors = {
   synced: colors.success,
   failed: colors.error,
 };
-
-const sortAppointments = (items) => [...items].sort(
-  (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
-);
-
-const filterNonCanceledAppointments = (items) => (
-  items.filter((item) => !isCanceledAppointment(item))
-);
 
 const getAppointmentServices = (appointment) => {
   if (Array.isArray(appointment.services) && appointment.services.length > 0) {
@@ -137,67 +145,6 @@ const getAppointmentServiceName = (appointment) => {
     .join(' + ');
 };
 
-const buildDayUtcRange = (date) => {
-  const from = new Date(date);
-  from.setHours(0, 0, 0, 0);
-
-  const to = new Date(date);
-  to.setHours(23, 59, 59, 999);
-
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
-};
-
-const padDatePart = (value) => String(value).padStart(2, '0');
-
-const getLocalDateKey = (dateValue) => {
-  const date = new Date(dateValue);
-  return [
-    date.getFullYear(),
-    padDatePart(date.getMonth() + 1),
-    padDatePart(date.getDate()),
-  ].join('-');
-};
-
-const getMonthKey = (dateValue) => {
-  const date = new Date(dateValue);
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}`;
-};
-
-const buildCalendarGridUtcRange = (monthValue) => {
-  const month = new Date(monthValue);
-  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
-  const from = new Date(firstDay);
-  from.setDate(firstDay.getDate() - firstDay.getDay());
-  from.setHours(0, 0, 0, 0);
-
-  const to = new Date(from);
-  to.setDate(from.getDate() + 41);
-  to.setHours(23, 59, 59, 999);
-
-  return { from: from.toISOString(), to: to.toISOString() };
-};
-
-const buildInitialAgendaUtcRange = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const from = new Date(today);
-  from.setDate(today.getDate() + 1);
-
-  const to = new Date(today);
-  to.setDate(today.getDate() + CALENDAR_LOOKAHEAD_DAYS);
-  to.setHours(23, 59, 59, 999);
-
-  return { from: from.toISOString(), to: to.toISOString() };
-};
-
-const isSameLocalDay = (firstDate, secondDate) => (
-  getLocalDateKey(firstDate) === getLocalDateKey(secondDate)
-);
-
 const calculateServicesTotal = (services) => services.reduce((totals, service) => ({
   price: totals.price + Number(service.price || 0),
   estimatedTime: totals.estimatedTime + Number(service.estimatedTime || 0),
@@ -208,6 +155,9 @@ const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
   day: '2-digit',
   month: 'long',
 });
+
+// "quinta-feira, 13 de agosto" fica longo demais no cabecalho da secao.
+const formatSectionDate = (date) => formatDateLabel(date).replace('-feira', '');
 
 const formatShortDate = (date) => date.toLocaleDateString('pt-BR', {
   day: '2-digit',
@@ -230,22 +180,6 @@ const isAppointmentConflictError = (error) => error?.response?.status === 409;
 
 const hasTimeOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
-const createBaseSlots = (date) => {
-  const slots = [];
-  const cursor = new Date(date);
-  cursor.setHours(DAY_START_HOUR, 0, 0, 0);
-
-  const end = new Date(date);
-  end.setHours(DAY_END_HOUR, 0, 0, 0);
-
-  while (cursor < end) {
-    slots.push(new Date(cursor));
-    cursor.setMinutes(cursor.getMinutes() + SLOT_STEP_MINUTES);
-  }
-
-  return slots;
-};
-
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -253,7 +187,14 @@ const AgendaScreen = () => {
   const bottomInset = Math.max(insets.bottom, 8);
   const screenRef = useRef(null);
   const actionButtonRefs = useRef({});
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const sectionListRef = useRef(null);
+  const sectionsRef = useRef([]);
+  const scrollTargetRef = useRef(null);
+  const canLoadMoreRef = useRef(false);
+  // "Hoje" fica congelado na montagem para os rotulos nao mudarem sozinhos
+  // se o app ficar aberto durante a virada do dia.
+  const todayRef = useRef(startOfLocalDay(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay(new Date()));
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() => {
     const today = new Date();
@@ -263,8 +204,15 @@ const AgendaScreen = () => {
   const calendarMarksCacheRef = useRef({});
   const calendarCacheGenerationRef = useRef(0);
   const calendarRequestIdsRef = useRef({});
-  const didBootstrapRef = useRef(false);
-  const skipSelectedDateEffectRef = useRef(false);
+
+  const [agendaWindow, setAgendaWindow] = useState(() => {
+    const window = buildAgendaWindow(startOfLocalDay(new Date()));
+    return { start: window.start, end: window.end };
+  });
+  // Espelha a janela para os handlers assincronos nao lerem closure velha.
+  const windowRangeRef = useRef(agendaWindow);
+  const [loadMoreState, setLoadMoreState] = useState('idle');
+  const [scrollRequestId, setScrollRequestId] = useState(0);
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
@@ -417,19 +365,25 @@ const AgendaScreen = () => {
     [appointments],
   );
 
-  const freeSlotsCount = useMemo(() => {
-    const baseSlots = createBaseSlots(selectedDate);
+  const sections = useMemo(() => buildAgendaSections({
+    appointments,
+    windowStart: agendaWindow.start,
+    windowEnd: agendaWindow.end,
+    referenceDate: todayRef.current,
+    focusedDate: selectedDate,
+  }), [appointments, agendaWindow, selectedDate]);
 
-    return baseSlots.filter((slot) => !activeAppointments.some((appointment) => {
-      const startAt = new Date(appointment.startAt);
-      const endAt = new Date(appointment.endAt);
-      return slot >= startAt && slot < endAt;
-    })).length;
-  }, [activeAppointments, selectedDate]);
+  const windowSummary = useMemo(() => summarizeAgendaSections(sections), [sections]);
 
-  const totalForecast = useMemo(
-    () => activeAppointments.reduce((sum, item) => sum + Number(item.price || 0), 0),
-    [activeAppointments],
+  // O retry de scroll roda dentro de setTimeout, entao precisa das secoes por ref.
+  useEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
+
+  const isWindowShowingToday = isWithinWindow(
+    todayRef.current,
+    agendaWindow.start,
+    agendaWindow.end,
   );
 
   const loadClientAvailability = async () => {
@@ -500,15 +454,32 @@ const AgendaScreen = () => {
     setServices(servicesResponse.data || []);
   };
 
-  const loadAgendaForDate = async (date, { isRefresh = false } = {}) => {
+  const applyWindowRange = (start, end) => {
+    windowRangeRef.current = { start, end };
+    setAgendaWindow({ start, end });
+  };
+
+  // Recarrega a janela inteira ancorada em uma data. Usado no bootstrap, no
+  // refresh e quando o seletor pede um dia longe do que esta carregado.
+  const loadAgendaWindow = async (anchorDate, { isRefresh = false, keepRange = false } = {}) => {
     if (!isRefresh) {
       setLoading(true);
     }
 
     try {
-      const { from, to } = buildDayUtcRange(date);
-      const data = await listAppointments({ from, to });
+      const range = keepRange
+        ? {
+          start: windowRangeRef.current.start,
+          end: windowRangeRef.current.end,
+          from: windowRangeRef.current.start.toISOString(),
+          to: windowRangeRef.current.end.toISOString(),
+        }
+        : buildAgendaWindow(anchorDate);
+
+      const data = await listAppointments({ from: range.from, to: range.to });
+      applyWindowRange(range.start, range.end);
       setAppointments(sortAppointments(data));
+      setLoadMoreState('idle');
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
       if (!isSessionExpiredError(error)) {
@@ -519,6 +490,77 @@ const AgendaScreen = () => {
       setRefreshing(false);
     }
   };
+
+  const getMaxAgendaEnd = () => endOfLocalDay(
+    addLocalDays(todayRef.current, AGENDA_MAX_LOOKAHEAD_DAYS),
+  );
+
+  // Anexa blocos contiguos ate cobrir `desiredEnd`, sem recarregar o que ja veio.
+  const extendAgendaWindowTo = async (desiredEnd) => {
+    const maxEnd = getMaxAgendaEnd();
+    const limit = desiredEnd.getTime() > maxEnd.getTime() ? maxEnd : desiredEnd;
+
+    if (windowRangeRef.current.end.getTime() >= limit.getTime()) {
+      setLoadMoreState(
+        windowRangeRef.current.end.getTime() >= maxEnd.getTime() ? 'exhausted' : 'idle',
+      );
+      return;
+    }
+
+    setLoadMoreState('loading');
+
+    try {
+      let cursor = windowRangeRef.current.end;
+
+      while (cursor.getTime() < limit.getTime()) {
+        const block = getNextAgendaWindowBlock(cursor, limit);
+        if (!block) break;
+
+        // eslint-disable-next-line no-await-in-loop
+        const data = await listAppointments({ from: block.from, to: block.to });
+        setAppointments((previous) => sortAppointments(mergeAppointmentsById(previous, data)));
+        applyWindowRange(windowRangeRef.current.start, block.end);
+        cursor = block.end;
+      }
+
+      setLoadMoreState(
+        windowRangeRef.current.end.getTime() >= maxEnd.getTime() ? 'exhausted' : 'idle',
+      );
+    } catch (error) {
+      console.error('Erro ao carregar mais dias:', error.response?.data || error.message);
+      setLoadMoreState('error');
+    }
+  };
+
+  const extendAgendaWindow = () => extendAgendaWindowTo(
+    endOfLocalDay(addLocalDays(windowRangeRef.current.end, AGENDA_WINDOW_DAYS)),
+  );
+
+  // Garante que a data esteja na janela: estende quando esta logo adiante,
+  // reancora quando esta no passado ou muito longe.
+  const ensureDateVisible = async (date) => {
+    const target = startOfLocalDay(date);
+    const { start, end } = windowRangeRef.current;
+
+    if (isWithinWindow(target, start, end)) {
+      return;
+    }
+
+    const oneBlockAhead = endOfLocalDay(addLocalDays(end, AGENDA_WINDOW_DAYS));
+
+    if (target.getTime() > end.getTime() && target.getTime() <= oneBlockAhead.getTime()) {
+      await extendAgendaWindowTo(endOfLocalDay(addLocalDays(target, AGENDA_WINDOW_DAYS)));
+      return;
+    }
+
+    await loadAgendaWindow(target);
+  };
+
+  const isWithinLoadedWindow = (dateValue) => isWithinWindow(
+    dateValue,
+    windowRangeRef.current.start,
+    windowRangeRef.current.end,
+  );
 
   const loadCalendarMarks = useCallback(async (monthValue, { force = false } = {}) => {
     const normalizedMonth = new Date(
@@ -589,36 +631,79 @@ const AgendaScreen = () => {
     loadCalendarMarks(nextMonth);
   };
 
+  const requestScrollToDate = (date) => {
+    scrollTargetRef.current = { key: getLocalDateKey(date), attempts: 0 };
+    setScrollRequestId((id) => id + 1);
+  };
+
+  const focusDate = async (date) => {
+    const target = startOfLocalDay(date);
+    closeAppointmentActions();
+    setSelectedDate(target);
+    setVisibleCalendarMonth(new Date(target.getFullYear(), target.getMonth(), 1));
+    await ensureDateVisible(target);
+    requestScrollToDate(target);
+  };
+
+  const handlePickDate = (pickedDate) => {
+    setShowDayPicker(false);
+    focusDate(pickedDate);
+  };
+
+  const handleBackToToday = () => focusDate(todayRef.current);
+
+  const handleEndReached = () => {
+    if (!canLoadMoreRef.current || loadMoreState !== 'idle') {
+      return;
+    }
+    // Sem essa guarda, uma agenda curta dispara onEndReached ja na montagem e
+    // encadeia requisicoes ate o teto de lookahead.
+    canLoadMoreRef.current = false;
+    extendAgendaWindow();
+  };
+
+  // Sem getItemLayout (os cards tem altura variavel) o scroll para um indice ainda
+  // nao renderizado falha; aqui aproximamos e tentamos de novo, no maximo 3 vezes.
+  const handleScrollToIndexFailed = (info) => {
+    const target = scrollTargetRef.current;
+
+    if (!target || target.attempts >= 3) {
+      scrollTargetRef.current = null;
+      return;
+    }
+
+    target.attempts += 1;
+    sectionListRef.current?.getScrollResponder()?.scrollTo({
+      y: Math.max(0, (info.averageItemLength || 96) * info.index),
+      animated: false,
+    });
+
+    setTimeout(() => {
+      const sectionIndex = findSectionIndexByKey(sectionsRef.current, target.key);
+      if (sectionIndex >= 0) {
+        sectionListRef.current?.scrollToLocation({
+          sectionIndex,
+          itemIndex: 0,
+          viewPosition: 0,
+          animated: false,
+        });
+      }
+    }, 120);
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      let initialDate = today;
-
-      try {
-        const { from, to } = buildInitialAgendaUtcRange();
-        const futureAppointments = filterNonCanceledAppointments(
-          await listAppointments({ from, to }),
-        );
-        const nextAppointment = sortAppointments(futureAppointments)[0];
-
-        if (nextAppointment) {
-          initialDate = new Date(nextAppointment.startAt);
-        }
-      } catch (error) {
-        console.error('Erro ao localizar próximo atendimento:', error.response?.data || error.message);
-      }
-
-      const initialMonth = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
-      didBootstrapRef.current = true;
-      skipSelectedDateEffectRef.current = true;
-      setSelectedDate(initialDate);
+      // A agenda sempre abre em hoje: a janela de 30 dias ja traz os proximos
+      // atendimentos, entao nao existe mais o pulo para o proximo dia ocupado.
+      const today = todayRef.current;
+      const initialMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      setSelectedDate(today);
       setVisibleCalendarMonth(initialMonth);
 
       try {
         await Promise.all([
           loadClientsAndServices(),
-          loadAgendaForDate(initialDate),
+          loadAgendaWindow(today),
           loadCalendarMarks(initialMonth),
         ]);
       } catch (error) {
@@ -633,21 +718,33 @@ const AgendaScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Rola ate a secao pedida. Depende de `sections` porque a secao pode so
+  // existir depois que a janela terminar de carregar.
   useEffect(() => {
-    if (!didBootstrapRef.current) {
+    const target = scrollTargetRef.current;
+
+    // `consumed` evita que qualquer mudanca posterior em `sections` (troca de
+    // status, carregar mais dias) role a lista de volta para o alvo antigo.
+    if (!target || target.consumed || sections.length === 0) {
       return;
     }
 
-    if (skipSelectedDateEffectRef.current) {
-      skipSelectedDateEffectRef.current = false;
+    const sectionIndex = findSectionIndexByKey(sections, target.key);
+
+    if (sectionIndex < 0) {
       return;
     }
 
-    animateNextLayout();
-    closeAppointmentActions();
-    loadAgendaForDate(selectedDate);
+    target.consumed = true;
+    sectionListRef.current?.scrollToLocation({
+      sectionIndex,
+      itemIndex: 0,
+      viewPosition: 0,
+      viewOffset: 0,
+      animated: !reduceMotionEnabled,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, [scrollRequestId, sections]);
 
   useEffect(() => {
     if (!modalVisible) {
@@ -688,7 +785,7 @@ const AgendaScreen = () => {
     try {
       await Promise.all([
         loadClientsAndServices(),
-        loadAgendaForDate(selectedDate, { isRefresh: true }),
+        loadAgendaWindow(selectedDate, { isRefresh: true, keepRange: true }),
         loadCalendarMarks(visibleCalendarMonth, { force: true }),
       ]);
     } catch (error) {
@@ -955,12 +1052,13 @@ const AgendaScreen = () => {
             String(item.id) !== String(editingAppointmentId)
           ));
 
-          return isSameLocalDay(updated.startAt, selectedDate)
+          return isWithinLoadedWindow(updated.startAt)
             ? sortAppointments([...withoutEditedAppointment, updated])
             : sortAppointments(withoutEditedAppointment);
         });
         closeModal();
         refreshCalendarMarksForDates([previousAppointment?.startAt, updated.startAt]);
+        focusDate(new Date(updated.startAt));
       } catch (error) {
         if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
@@ -977,11 +1075,13 @@ const AgendaScreen = () => {
 
     try {
       const created = await createAppointment(payload);
-      if (isSameLocalDay(created.startAt, selectedDate)) {
+      if (isWithinLoadedWindow(created.startAt)) {
         setAppointments((prev) => sortAppointments([...prev, created]));
       }
       closeModal();
       refreshCalendarMarksForDates([created.startAt]);
+      // Leva a usuaria ate o dia salvo, mesmo que ele esteja fora da janela atual.
+      focusDate(new Date(created.startAt));
     } catch (error) {
       if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
@@ -1288,7 +1388,33 @@ const AgendaScreen = () => {
     );
   };
 
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderTitleRow}>
+        {section.relativeLabel && (
+          <View style={styles.sectionBadge}>
+            <Text style={styles.sectionBadgeText}>{section.relativeLabel}</Text>
+          </View>
+        )}
+        <Text style={styles.sectionTitle} numberOfLines={1}>
+          {formatSectionDate(section.date)}
+        </Text>
+      </View>
+      <Text style={styles.sectionMeta}>
+        {section.activeCount === 1 ? '1 atendimento' : `${section.activeCount} atendimentos`}
+      </Text>
+    </View>
+  );
+
   const renderAppointmentItem = ({ item }) => {
+    if (isDayPlaceholder(item)) {
+      return (
+        <View style={styles.emptyDayRow}>
+          <Text style={styles.emptyDayText}>Nenhum atendimento</Text>
+        </View>
+      );
+    }
+
     const isExpanded = String(expandedAppointmentId) === String(item.id);
     const isAnimatingStatus = String(statusAnimationAppointmentId) === String(item.id);
     const isCanceled = isCanceledAppointment(item);
@@ -1396,7 +1522,7 @@ const AgendaScreen = () => {
   const renderEmptyAgenda = () => (
     <View style={styles.emptyState}>
       <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
-      <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
+      <Text style={styles.emptyTitle}>Nenhum agendamento no período</Text>
       <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
 
       {!canSchedule && (
@@ -1414,6 +1540,23 @@ const AgendaScreen = () => {
             <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
           </TouchableOpacity>
         </View>
+      )}
+    </View>
+  );
+
+  const renderAgendaFooter = () => (
+    <View>
+      {windowSummary.appointments === 0 && renderEmptyAgenda()}
+      {loadMoreState === 'loading' && (
+        <Text style={styles.footerText}>Carregando mais dias...</Text>
+      )}
+      {loadMoreState === 'error' && (
+        <TouchableOpacity style={styles.footerButton} onPress={extendAgendaWindow}>
+          <Text style={styles.footerButtonText}>Não deu para carregar. Tentar novamente</Text>
+        </TouchableOpacity>
+      )}
+      {loadMoreState === 'exhausted' && (
+        <Text style={styles.footerText}>Você chegou ao fim dos próximos 12 meses.</Text>
       )}
     </View>
   );
@@ -1487,10 +1630,17 @@ const AgendaScreen = () => {
     <View ref={screenRef} style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
-        <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
-          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          <Text style={styles.dayButtonText}>{formatDateLabel(selectedDate)}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {!isWindowShowingToday && (
+            <TouchableOpacity style={styles.todayButton} onPress={handleBackToToday}>
+              <Text style={styles.todayButtonText}>Hoje</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            <Text style={styles.dayButtonText}>{formatDateLabel(selectedDate)}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <DateTimePickerModal
@@ -1503,40 +1653,54 @@ const AgendaScreen = () => {
         markedDates={markedDates}
         onVisibleMonthChange={handleVisibleMonthChange}
         onCancel={() => setShowDayPicker(false)}
-        onConfirm={(pickedDate) => {
-          setShowDayPicker(false);
-          setVisibleCalendarMonth(new Date(pickedDate.getFullYear(), pickedDate.getMonth(), 1));
-          setSelectedDate(pickedDate);
-        }}
+        onConfirm={handlePickDate}
       />
 
       <View style={styles.summaryCard}>
-        <View>
-          <Text style={styles.summaryLabel}>Atendimentos</Text>
-          <Text style={styles.summaryValue}>{activeAppointments.length}</Text>
+        <View style={styles.summaryRow}>
+          <View>
+            <Text style={styles.summaryLabel}>Atendimentos</Text>
+            <Text style={styles.summaryValue}>{windowSummary.appointments}</Text>
+          </View>
+          <View>
+            <Text style={styles.summaryLabel}>Previsto</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(windowSummary.forecast)}</Text>
+          </View>
+          <View>
+            <Text style={styles.summaryLabel}>Dias ocupados</Text>
+            <Text style={styles.summaryValue}>{windowSummary.busyDays}</Text>
+          </View>
         </View>
-        <View>
-          <Text style={styles.summaryLabel}>Previsto</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(totalForecast)}</Text>
-        </View>
-        <View>
-          <Text style={styles.summaryLabel}>Livres</Text>
-          <Text style={styles.summaryValue}>{freeSlotsCount}</Text>
-        </View>
+        <Text style={styles.summaryPeriod}>
+          {formatShortDate(agendaWindow.start)} a {formatShortDate(agendaWindow.end)}
+        </Text>
       </View>
 
-      <FlatList
+      <SectionList
+        ref={sectionListRef}
         style={styles.list}
-        data={appointments}
-        keyExtractor={(item) => String(item.id)}
+        sections={sections}
+        keyExtractor={(item) => (
+          isDayPlaceholder(item) ? `empty-${item.dateKey}` : String(item.id)
+        )}
         renderItem={renderAppointmentItem}
-        ListEmptyComponent={renderEmptyAgenda}
+        renderSectionHeader={renderSectionHeader}
+        stickySectionHeadersEnabled
+        extraData={`${expandedAppointmentId}-${statusAnimationAppointmentId}`}
         contentContainerStyle={[
           styles.listContainer,
-          appointments.length === 0 && styles.emptyListContainer,
           { paddingBottom: 96 + bottomInset },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        onEndReachedThreshold={AGENDA_END_REACHED_THRESHOLD}
+        onMomentumScrollBegin={() => { canLoadMoreRef.current = true; }}
+        onEndReached={handleEndReached}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        onScrollBeginDrag={closeAppointmentActions}
+        ListFooterComponent={renderAgendaFooter}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={10}
         alwaysBounceVertical
       />
 
@@ -1809,6 +1973,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.text,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  todayButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  todayButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   dayButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1819,12 +2001,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 6,
-    maxWidth: '70%',
+    flexShrink: 1,
   },
   dayButtonText: {
     color: colors.text,
     textTransform: 'capitalize',
     fontSize: 13,
+    flexShrink: 1,
   },
   summaryCard: {
     backgroundColor: colors.white,
@@ -1832,9 +2015,91 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
+    marginBottom: 14,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+  },
+  summaryPeriod: {
+    marginTop: 10,
+    color: colors.darkGray,
+    fontSize: 11,
+  },
+  sectionHeader: {
+    // Precisa ser opaco: o cabecalho fica grudado no topo enquanto a lista rola.
+    backgroundColor: colors.background,
+    paddingTop: 6,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sectionHeaderTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  sectionBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sectionBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  sectionTitle: {
+    flexShrink: 1,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  sectionMeta: {
+    color: colors.darkGray,
+    fontSize: 11,
+    flexShrink: 0,
+  },
+  emptyDayRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 11,
+    marginBottom: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    backgroundColor: colors.inputBackground,
+  },
+  emptyDayText: {
+    color: colors.darkGray,
+    fontSize: 13,
+  },
+  footerText: {
+    marginTop: 8,
+    textAlign: 'center',
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  footerButton: {
+    marginTop: 8,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  footerButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   summaryLabel: {
     color: colors.darkGray,
@@ -1851,9 +2116,6 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  emptyListContainer: {
-    flexGrow: 1,
   },
   card: {
     backgroundColor: colors.white,
