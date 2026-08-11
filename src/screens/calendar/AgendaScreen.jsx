@@ -22,6 +22,15 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
 import colors from '../../constants/colors';
+import useCurrencyInput from '../../hooks/useCurrencyInput';
+import {
+  calculateDepositAmount,
+  calculateRemainingAmount,
+  formatCurrency,
+  inferDepositPercent,
+  isSameCurrencyAmount,
+  roundCurrency,
+} from '../../utils/currency';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -189,71 +198,10 @@ const isSameLocalDay = (firstDate, secondDate) => (
   getLocalDateKey(firstDate) === getLocalDateKey(secondDate)
 );
 
-const formatCurrency = (value = 0) => Number(value).toLocaleString('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-});
-
-const roundCurrency = (value = 0) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-
 const calculateServicesTotal = (services) => services.reduce((totals, service) => ({
   price: totals.price + Number(service.price || 0),
   estimatedTime: totals.estimatedTime + Number(service.estimatedTime || 0),
 }), { price: 0, estimatedTime: 0 });
-
-const calculateDepositAmount = (price = 0, percent = DEFAULT_DEPOSIT_PERCENT) => (
-  roundCurrency((Number(price || 0) * Number(percent || 0)) / 100)
-);
-
-const formatCurrencyInput = (value = 0) => roundCurrency(value).toLocaleString('pt-BR', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-const sanitizeCurrencyInput = (value = '') => String(value).replace(/[^\d.,]/g, '');
-
-const parseCurrencyInput = (value = '') => {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? roundCurrency(value) : null;
-  }
-
-  const sanitizedValue = sanitizeCurrencyInput(value);
-  if (!sanitizedValue) {
-    return 0;
-  }
-
-  const lastComma = sanitizedValue.lastIndexOf(',');
-  const lastDot = sanitizedValue.lastIndexOf('.');
-  const normalizedValue = lastComma > lastDot
-    ? sanitizedValue.replace(/\./g, '').replace(',', '.')
-    : sanitizedValue.replace(/,/g, '');
-  const parsedValue = Number(normalizedValue);
-
-  return Number.isFinite(parsedValue) ? roundCurrency(parsedValue) : null;
-};
-
-const calculateRemainingAmount = (price = 0, depositAmount = 0) => {
-  const total = Math.max(Number(price || 0), 0);
-  const deposit = Math.max(Number(depositAmount || 0), 0);
-  return roundCurrency(Math.max(total - deposit, 0));
-};
-
-const isSameCurrencyAmount = (firstValue = 0, secondValue = 0) => (
-  Math.abs(roundCurrency(firstValue) - roundCurrency(secondValue)) < 0.01
-);
-
-const inferDepositPercent = (depositAmount = 0, price = 0) => {
-  const numericPrice = Number(price || 0);
-  const numericDeposit = Number(depositAmount || 0);
-
-  if (!numericPrice || !Number.isFinite(numericPrice) || !Number.isFinite(numericDeposit)) {
-    return null;
-  }
-
-  return DEPOSIT_PERCENT_OPTIONS.find((option) => (
-    isSameCurrencyAmount(calculateDepositAmount(numericPrice, option), numericDeposit)
-  )) ?? null;
-};
 
 const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
   weekday: 'long',
@@ -352,10 +300,12 @@ const AgendaScreen = () => {
     startAt: new Date(),
     depositPercent: DEFAULT_DEPOSIT_PERCENT,
     depositAmount: 0,
-    depositAmountInput: formatCurrencyInput(0),
     depositMode: 'percent',
     notes: '',
   });
+  // Forca o campo de sinal a redesenhar quando o valor externo nao muda de numero
+  // mas o texto precisa voltar ao normalizado (chip 0% com campo zerado, reabrir o modal).
+  const [depositSyncToken, setDepositSyncToken] = useState(0);
 
   const canSchedule = hasClientRecords && services.length > 0;
   const markedDates = calendarMarksByMonth[getMonthKey(visibleCalendarMonth)] || [];
@@ -725,22 +675,12 @@ const AgendaScreen = () => {
 
     const percent = form.depositPercent ?? DEFAULT_DEPOSIT_PERCENT;
     const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
-    const nextDepositAmountInput = formatCurrencyInput(nextDepositAmount);
 
-    setForm((prev) => {
-      if (
-        isSameCurrencyAmount(prev.depositAmount, nextDepositAmount)
-        && prev.depositAmountInput === nextDepositAmountInput
-      ) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        depositAmount: nextDepositAmount,
-        depositAmountInput: nextDepositAmountInput,
-      };
-    });
+    setForm((prev) => (
+      isSameCurrencyAmount(prev.depositAmount, nextDepositAmount)
+        ? prev
+        : { ...prev, depositAmount: nextDepositAmount }
+    ));
   }, [form.depositMode, form.depositPercent, modalVisible, selectedServicesTotal.price]);
 
   const onRefresh = async () => {
@@ -787,10 +727,10 @@ const AgendaScreen = () => {
       startAt: defaultStartAt,
       depositPercent: DEFAULT_DEPOSIT_PERCENT,
       depositAmount: 0,
-      depositAmountInput: formatCurrencyInput(0),
       depositMode: 'percent',
       notes: '',
     });
+    setDepositSyncToken((token) => token + 1);
 
     setModalVisible(true);
   };
@@ -804,7 +744,11 @@ const AgendaScreen = () => {
     setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
     const appointmentDepositAmount = roundCurrency(Number(appointment.depositAmount || 0));
-    const appointmentDepositPercent = inferDepositPercent(appointmentDepositAmount, appointment.price);
+    const appointmentDepositPercent = inferDepositPercent(
+      appointmentDepositAmount,
+      appointment.price,
+      DEPOSIT_PERCENT_OPTIONS,
+    );
     const appointmentClient = {
       id: appointment.clientId,
       name: appointment.clientName || 'Cliente',
@@ -820,10 +764,10 @@ const AgendaScreen = () => {
       startAt: new Date(appointment.startAt),
       depositPercent: appointmentDepositPercent,
       depositAmount: appointmentDepositAmount,
-      depositAmountInput: formatCurrencyInput(appointmentDepositAmount),
       depositMode: appointmentDepositPercent === null ? 'manual' : 'percent',
       notes: appointment.notes || '',
     });
+    setDepositSyncToken((token) => token + 1);
 
     setModalVisible(true);
   };
@@ -907,41 +851,30 @@ const AgendaScreen = () => {
   ]);
 
   const handleDepositPercentPress = (percent) => {
-    const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
-
     setForm((prev) => ({
       ...prev,
       depositPercent: percent,
-      depositAmount: nextDepositAmount,
-      depositAmountInput: formatCurrencyInput(nextDepositAmount),
+      depositAmount: calculateDepositAmount(selectedServicesTotal.price, percent),
       depositMode: 'percent',
     }));
+    setDepositSyncToken((token) => token + 1);
   };
 
-  const handleDepositAmountChange = (value) => {
-    const sanitizedValue = sanitizeCurrencyInput(value);
-    const parsedDepositAmount = parseCurrencyInput(sanitizedValue);
-
+  // O texto e a posicao do cursor ficam com o useCurrencyInput; aqui so entra o numero.
+  const handleDepositAmountChange = useCallback((amount) => {
     setForm((prev) => ({
       ...prev,
       depositPercent: null,
-      depositAmount: parsedDepositAmount ?? 0,
-      depositAmountInput: sanitizedValue,
+      depositAmount: amount,
       depositMode: 'manual',
     }));
-  };
+  }, []);
 
-  const handleDepositAmountBlur = () => {
-    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
-    const nextDepositAmount = Math.max(parsedDepositAmount ?? 0, 0);
-
-    setForm((prev) => ({
-      ...prev,
-      depositAmount: nextDepositAmount,
-      depositAmountInput: formatCurrencyInput(nextDepositAmount),
-      depositMode: 'manual',
-    }));
-  };
+  const depositInput = useCurrencyInput({
+    value: form.depositAmount,
+    syncToken: depositSyncToken,
+    onChangeValue: handleDepositAmountChange,
+  });
 
   const hasLocalAppointmentConflict = () => {
     if (!form.startAt || selectedServicesTotal.estimatedTime <= 0) {
@@ -981,10 +914,9 @@ const AgendaScreen = () => {
       return;
     }
 
-    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
-    const finalDepositAmount = parsedDepositAmount === null ? null : roundCurrency(parsedDepositAmount);
+    const finalDepositAmount = roundCurrency(Number(form.depositAmount || 0));
 
-    if (finalDepositAmount === null || !Number.isFinite(finalDepositAmount) || finalDepositAmount < 0) {
+    if (!Number.isFinite(finalDepositAmount) || finalDepositAmount < 0) {
       Alert.alert('Sinal inválido', 'Informe um valor de sinal válido.');
       return;
     }
@@ -1752,11 +1684,13 @@ const AgendaScreen = () => {
                   <Text style={styles.depositInputPrefix}>R$</Text>
                   <TextInput
                     style={styles.depositInput}
-                    value={form.depositAmountInput}
-                    onChangeText={handleDepositAmountChange}
-                    onBlur={handleDepositAmountBlur}
+                    {...depositInput}
                     keyboardType="decimal-pad"
                     placeholder="0,00"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="no"
+                    accessibilityLabel="Valor do sinal em reais"
                   />
                 </View>
                 <View style={styles.depositSummaryGrid}>
