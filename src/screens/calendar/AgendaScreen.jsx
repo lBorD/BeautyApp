@@ -54,6 +54,7 @@ import {
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
+  archiveAppointment,
   createAppointment,
   listAppointments,
   updateAppointment,
@@ -67,7 +68,7 @@ const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
 const AGENDA_END_REACHED_THRESHOLD = 0.4;
 const ACTION_ANIMATION_DURATION = 180;
 const ACTION_POPOVER_MAX_WIDTH = 268;
-const ACTION_POPOVER_ESTIMATED_HEIGHT = 210;
+const ACTION_POPOVER_ESTIMATED_HEIGHT = 250;
 const ACTION_POPOVER_SCREEN_MARGIN = 16;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -230,6 +231,8 @@ const AgendaScreen = () => {
   const [actionPopoverPosition, setActionPopoverPosition] = useState(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
   const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
+  const [archiveConfirmationId, setArchiveConfirmationId] = useState(null);
+  const [archivingAppointmentId, setArchivingAppointmentId] = useState(null);
   const [statusAnimationAppointmentId, setStatusAnimationAppointmentId] = useState(null);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const actionMenuAnimation = useRef(new Animated.Value(0)).current;
@@ -277,6 +280,7 @@ const AgendaScreen = () => {
     setExpandedAppointmentId(null);
     setActionPopoverPosition(null);
     setDeleteConfirmationId(null);
+    setArchiveConfirmationId(null);
   }, [actionMenuAnimation]);
 
   useEffect(() => {
@@ -1260,9 +1264,48 @@ const AgendaScreen = () => {
       closeAppointmentActions();
       refreshCalendarMarksForDates([appointment.startAt]);
     } catch (error) {
-      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível excluir o atendimento.');
+      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível cancelar o atendimento.');
     } finally {
       setDeletingAppointmentId(null);
+    }
+  };
+
+  const openArchiveConfirmation = (appointmentId) => {
+    animateNextLayout();
+    setDeleteConfirmationId(null);
+    setArchiveConfirmationId(appointmentId);
+  };
+
+  const closeArchiveConfirmation = () => {
+    animateNextLayout();
+    setArchiveConfirmationId(null);
+  };
+
+  // Some com o atendimento de vez. A API so aceita cancelados e passa a excluir
+  // arquivados das listagens, entao ele nao volta nem apos recarregar.
+  const handleArchiveAppointment = async (appointment) => {
+    if (archivingAppointmentId !== null) {
+      return;
+    }
+
+    setArchivingAppointmentId(appointment.id);
+    animateNextLayout();
+    setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
+    closeAppointmentActions();
+
+    try {
+      await archiveAppointment(appointment.id);
+      // Sem refreshCalendarMarksForDates: cancelado nunca entrou nos marcadores.
+    } catch (error) {
+      animateNextLayout();
+      setAppointments((prev) => (
+        prev.some((item) => String(item.id) === String(appointment.id))
+          ? prev
+          : sortAppointments([...prev, appointment])
+      ));
+      Alert.alert('Erro', getAppointmentErrorMessage(error, 'Não foi possível apagar o atendimento.'));
+    } finally {
+      setArchivingAppointmentId(null);
     }
   };
 
@@ -1277,6 +1320,8 @@ const AgendaScreen = () => {
 
     const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
     const isDeleting = String(deletingAppointmentId) === String(appointment.id);
+    const isConfirmingArchive = String(archiveConfirmationId) === String(appointment.id);
+    const isArchiving = String(archivingAppointmentId) === String(appointment.id);
     const opensBelow = actionPopoverPosition.placement === 'below';
     const animatedPopoverStyle = {
       opacity: actionMenuAnimation,
@@ -1325,13 +1370,51 @@ const AgendaScreen = () => {
           ]}
         >
           {appointment.status === 'canceled' ? (
-            <TouchableOpacity
-              style={styles.actionMenuItem}
-              onPress={() => handleStatusChange(appointment.id, 'scheduled')}
-            >
-              <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
-              <Text style={styles.actionMenuText}>Restaurar atendimento</Text>
-            </TouchableOpacity>
+            !isConfirmingArchive ? (
+              <>
+                <TouchableOpacity
+                  style={styles.actionMenuItem}
+                  onPress={() => handleStatusChange(appointment.id, 'scheduled')}
+                >
+                  <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
+                  <Text style={styles.actionMenuText}>Restaurar atendimento</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionMenuItem}
+                  onPress={() => openArchiveConfirmation(appointment.id)}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                  <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
+                    Apagar da agenda
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.deleteConfirmation}>
+                <Text style={styles.deleteConfirmationTitle}>Apagar da agenda?</Text>
+                <Text style={styles.deleteConfirmationText}>
+                  Ele some da agenda para sempre e não poderá ser restaurado pelo app.
+                </Text>
+                <View style={styles.deleteConfirmationActions}>
+                  <TouchableOpacity
+                    style={styles.deleteConfirmationSecondaryButton}
+                    onPress={closeArchiveConfirmation}
+                    disabled={isArchiving}
+                  >
+                    <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.deleteConfirmationButton, isArchiving && styles.disabledButton]}
+                    onPress={() => handleArchiveAppointment(appointment)}
+                    disabled={isArchiving}
+                  >
+                    <Text style={styles.deleteConfirmationButtonText}>
+                      {isArchiving ? 'Apagando...' : 'Apagar da agenda'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )
           ) : !isConfirmingDelete ? (
             <>
               <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(appointment)}>
@@ -1351,17 +1434,17 @@ const AgendaScreen = () => {
                 style={styles.actionMenuItem}
                 onPress={() => openDeleteConfirmation(appointment.id)}
               >
-                <Ionicons name="trash-outline" size={18} color={colors.error} />
+                <Ionicons name="close-circle-outline" size={18} color={colors.error} />
                 <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
-                  Excluir atendimento
+                  Cancelar atendimento
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={styles.deleteConfirmation}>
-              <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
+              <Text style={styles.deleteConfirmationTitle}>Cancelar atendimento?</Text>
               <Text style={styles.deleteConfirmationText}>
-                Ele ficará cancelado, sem ocupar o horário, e poderá ser restaurado depois.
+                Ele fica cancelado, sem ocupar o horário, e pode ser restaurado ou apagado depois.
               </Text>
               <View style={styles.deleteConfirmationActions}>
                 <TouchableOpacity
@@ -1377,7 +1460,7 @@ const AgendaScreen = () => {
                   disabled={isDeleting}
                 >
                   <Text style={styles.deleteConfirmationButtonText}>
-                    {isDeleting ? 'Excluindo...' : 'Excluir atendimento'}
+                    {isDeleting ? 'Cancelando...' : 'Cancelar atendimento'}
                   </Text>
                 </TouchableOpacity>
               </View>
