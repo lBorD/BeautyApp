@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
+import GoogleSyncBadge from './GoogleSyncBadge';
 import colors from '../../constants/colors';
 import useCurrencyInput from '../../hooks/useCurrencyInput';
 import {
@@ -88,18 +89,6 @@ const statusColors = {
   scheduled: '#1677ff',
   canceled: colors.error,
   completed: colors.success,
-};
-
-const googleSyncLabels = {
-  pending: 'Google pendente',
-  synced: 'Google sincronizado',
-  failed: 'Falha no Google',
-};
-
-const googleSyncColors = {
-  pending: colors.warning,
-  synced: colors.success,
-  failed: colors.error,
 };
 
 const getAppointmentServices = (appointment) => {
@@ -411,6 +400,9 @@ const AgendaScreen = () => {
   const canShowMoreSections = agendaViewMode === 'lista'
     && (allSections.length > sections.length || loadMoreState !== 'exhausted');
 
+  const canCollapseSections = agendaViewMode === 'lista'
+    && visibleSectionLimit > AGENDA_VISIBLE_SECTIONS;
+
   // A legenda tem que descrever o que esta na tela, nao a janela carregada.
   const visibleRangeLabel = useMemo(() => {
     if (sections.length === 0) {
@@ -702,6 +694,12 @@ const AgendaScreen = () => {
     if (nextLimit >= allSections.length && loadMoreState === 'idle') {
       extendAgendaWindow();
     }
+  };
+
+  const handleCollapseSections = () => {
+    animateNextLayout();
+    closeAppointmentActions();
+    setVisibleSectionLimit(AGENDA_VISIBLE_SECTIONS);
   };
 
   // Depois de salvar, so mexe na view se o dia salvo nao estiver a vista.
@@ -1571,27 +1569,10 @@ const AgendaScreen = () => {
               {getAppointmentServiceName(item) || 'Serviço'}
             </Text>
           </View>
-          {googleSyncLabels[item.googleSyncStatus] && (
-            <View style={[
-              styles.googleSyncBadge,
-              { borderColor: googleSyncColors[item.googleSyncStatus] || colors.border },
-            ]}>
-              <Ionicons
-                name={item.googleSyncStatus === 'failed' ? 'cloud-offline-outline' : 'cloud-done-outline'}
-                size={13}
-                color={googleSyncColors[item.googleSyncStatus] || colors.darkGray}
-              />
-              <Text
-                numberOfLines={2}
-                style={[
-                  styles.googleSyncBadgeText,
-                  { color: googleSyncColors[item.googleSyncStatus] || colors.darkGray },
-                ]}
-              >
-                {googleSyncLabels[item.googleSyncStatus]}
-              </Text>
-            </View>
-          )}
+          <GoogleSyncBadge
+            status={item.googleSyncStatus}
+            reduceMotion={reduceMotionEnabled}
+          />
         </View>
 
       </Animated.View>
@@ -1627,16 +1608,31 @@ const AgendaScreen = () => {
     <View>
       {isAgendaEmpty && renderEmptyAgenda()}
 
-      {canShowMoreSections && loadMoreState !== 'loading' && (
-        <TouchableOpacity
-          style={styles.showMoreButton}
-          hitSlop={{ top: 10, right: 24, bottom: 10, left: 24 }}
-          onPress={handleShowMoreSections}
-          accessibilityRole="button"
-          accessibilityLabel="Exibir mais agendamentos"
-        >
-          <Ionicons name="chevron-down" size={18} color={colors.darkGray} />
-        </TouchableOpacity>
+      {loadMoreState !== 'loading' && (canShowMoreSections || canCollapseSections) && (
+        <View style={styles.sectionToggleRow}>
+          {canCollapseSections && (
+            <TouchableOpacity
+              style={styles.sectionToggleButton}
+              hitSlop={{ top: 10, right: 16, bottom: 10, left: 16 }}
+              onPress={handleCollapseSections}
+              accessibilityRole="button"
+              accessibilityLabel="Recolher a lista de agendamentos"
+            >
+              <Ionicons name="chevron-up" size={18} color={colors.darkGray} />
+            </TouchableOpacity>
+          )}
+          {canShowMoreSections && (
+            <TouchableOpacity
+              style={styles.sectionToggleButton}
+              hitSlop={{ top: 10, right: 16, bottom: 10, left: 16 }}
+              onPress={handleShowMoreSections}
+              accessibilityRole="button"
+              accessibilityLabel="Exibir mais agendamentos"
+            >
+              <Ionicons name="chevron-down" size={18} color={colors.darkGray} />
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {loadMoreState === 'loading' && (
@@ -2165,11 +2161,16 @@ const styles = StyleSheet.create({
     color: colors.darkGray,
     fontSize: 13,
   },
-  // Deliberadamente discreta: so a setinha, sem borda, fundo ou texto.
-  showMoreButton: {
-    alignSelf: 'center',
+  // Deliberadamente discretas: so as setinhas, sem borda, fundo ou texto.
+  sectionToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+  },
+  sectionToggleButton: {
     paddingVertical: 6,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     opacity: 0.65,
   },
   footerText: {
@@ -2282,22 +2283,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
     fontSize: 13,
     lineHeight: 18,
-  },
-  googleSyncBadge: {
-    maxWidth: '44%',
-    flexShrink: 1,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  googleSyncBadgeText: {
-    flexShrink: 1,
-    fontSize: 11,
-    fontWeight: '700',
   },
   actionPopoverOverlay: {
     ...StyleSheet.absoluteFillObject,
