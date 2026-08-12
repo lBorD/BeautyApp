@@ -39,7 +39,6 @@ import {
   buildAgendaWindow,
   buildCalendarGridUtcRange,
   endOfLocalDay,
-  findSectionIndexByKey,
   getLocalDateKey,
   getMonthKey,
   getNextAgendaWindowBlock,
@@ -47,6 +46,7 @@ import {
   isDayPlaceholder,
   isWithinWindow,
   mergeAppointmentsById,
+  selectAgendaSections,
   sortAppointments,
   startOfLocalDay,
   summarizeAgendaSections,
@@ -65,7 +65,10 @@ const DAY_START_HOUR = 8;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
-const AGENDA_END_REACHED_THRESHOLD = 0.4;
+// A lista fica curta de proposito: hoje mais o proximo dia com atendimento.
+// A setinha do rodape revela os demais, de dois em dois.
+const AGENDA_VISIBLE_SECTIONS = 2;
+const AGENDA_SECTIONS_STEP = 2;
 const ACTION_ANIMATION_DURATION = 180;
 const ACTION_POPOVER_MAX_WIDTH = 268;
 const ACTION_POPOVER_ESTIMATED_HEIGHT = 250;
@@ -188,14 +191,14 @@ const AgendaScreen = () => {
   const bottomInset = Math.max(insets.bottom, 8);
   const screenRef = useRef(null);
   const actionButtonRefs = useRef({});
-  const sectionListRef = useRef(null);
-  const sectionsRef = useRef([]);
-  const scrollTargetRef = useRef(null);
-  const canLoadMoreRef = useRef(false);
   // "Hoje" fica congelado na montagem para os rotulos nao mudarem sozinhos
   // se o app ficar aberto durante a virada do dia.
   const todayRef = useRef(startOfLocalDay(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay(new Date()));
+  // 'lista' = hoje + proximos, cortado em AGENDA_VISIBLE_SECTIONS.
+  // 'dia'   = so a data escolhida no calendario.
+  const [agendaViewMode, setAgendaViewMode] = useState('lista');
+  const [visibleSectionLimit, setVisibleSectionLimit] = useState(AGENDA_VISIBLE_SECTIONS);
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() => {
     const today = new Date();
@@ -213,7 +216,6 @@ const AgendaScreen = () => {
   // Espelha a janela para os handlers assincronos nao lerem closure velha.
   const windowRangeRef = useRef(agendaWindow);
   const [loadMoreState, setLoadMoreState] = useState('idle');
-  const [scrollRequestId, setScrollRequestId] = useState(0);
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
@@ -369,26 +371,56 @@ const AgendaScreen = () => {
     [appointments],
   );
 
-  const sections = useMemo(() => buildAgendaSections({
+  const allSections = useMemo(() => buildAgendaSections({
     appointments,
     windowStart: agendaWindow.start,
     windowEnd: agendaWindow.end,
     referenceDate: todayRef.current,
-    focusedDate: selectedDate,
-  }), [appointments, agendaWindow, selectedDate]);
+    // So no modo dia: no modo lista, um dia escolhido antes nao pode injetar secao.
+    focusedDate: agendaViewMode === 'dia' ? selectedDate : null,
+  }), [appointments, agendaWindow, agendaViewMode, selectedDate]);
 
+  const sections = useMemo(() => selectAgendaSections(allSections, {
+    mode: agendaViewMode,
+    selectedDateKey: getLocalDateKey(selectedDate),
+    limit: visibleSectionLimit,
+  }), [allSections, agendaViewMode, selectedDate, visibleSectionLimit]);
+
+  // O resumo do topo acompanha o que esta na tela, nao a janela carregada.
   const windowSummary = useMemo(() => summarizeAgendaSections(sections), [sections]);
 
-  // O retry de scroll roda dentro de setTimeout, entao precisa das secoes por ref.
-  useEffect(() => {
-    sectionsRef.current = sections;
-  }, [sections]);
+  const hasAnyAppointmentInWindow = useMemo(
+    () => allSections.some((section) => section.data.some((item) => !isDayPlaceholder(item))),
+    [allSections],
+  );
+
+  // Sem nada na janela inteira, o estado vazio grande (com os atalhos de cadastro)
+  // substitui a lista. Senao apareceria junto do placeholder do dia, duplicado.
+  const isAgendaEmpty = agendaViewMode === 'lista' && !hasAnyAppointmentInWindow;
+  const listSections = isAgendaEmpty ? [] : sections;
 
   const isWindowShowingToday = isWithinWindow(
     todayRef.current,
     agendaWindow.start,
     agendaWindow.end,
   );
+
+  const showTodayButton = agendaViewMode === 'dia' || !isWindowShowingToday;
+
+  // A setinha some so quando nao ha mais nada: nem secao carregada, nem dia adiante.
+  const canShowMoreSections = agendaViewMode === 'lista'
+    && (allSections.length > sections.length || loadMoreState !== 'exhausted');
+
+  // A legenda tem que descrever o que esta na tela, nao a janela carregada.
+  const visibleRangeLabel = useMemo(() => {
+    if (sections.length === 0) {
+      return formatShortDate(selectedDate);
+    }
+
+    const first = formatShortDate(sections[0].date);
+    const last = formatShortDate(sections[sections.length - 1].date);
+    return first === last ? first : `${first} a ${last}`;
+  }, [sections, selectedDate]);
 
   const loadClientAvailability = async () => {
     try {
@@ -635,64 +667,57 @@ const AgendaScreen = () => {
     loadCalendarMarks(nextMonth);
   };
 
-  const requestScrollToDate = (date) => {
-    scrollTargetRef.current = { key: getLocalDateKey(date), attempts: 0 };
-    setScrollRequestId((id) => id + 1);
-  };
-
-  const focusDate = async (date) => {
-    const target = startOfLocalDay(date);
+  // Escolher uma data no calendario filtra a agenda naquele dia, e so nele.
+  const handlePickDate = async (pickedDate) => {
+    setShowDayPicker(false);
+    const target = startOfLocalDay(pickedDate);
     closeAppointmentActions();
+    animateNextLayout();
     setSelectedDate(target);
     setVisibleCalendarMonth(new Date(target.getFullYear(), target.getMonth(), 1));
+    setAgendaViewMode('dia');
     await ensureDateVisible(target);
-    requestScrollToDate(target);
   };
 
-  const handlePickDate = (pickedDate) => {
-    setShowDayPicker(false);
-    focusDate(pickedDate);
+  const handleBackToToday = async () => {
+    const today = todayRef.current;
+    closeAppointmentActions();
+    animateNextLayout();
+    setSelectedDate(today);
+    setVisibleCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setAgendaViewMode('lista');
+    setVisibleSectionLimit(AGENDA_VISIBLE_SECTIONS);
+
+    if (!isWithinLoadedWindow(today)) {
+      await loadAgendaWindow(today);
+    }
   };
 
-  const handleBackToToday = () => focusDate(todayRef.current);
+  const handleShowMoreSections = () => {
+    animateNextLayout();
+    const nextLimit = visibleSectionLimit + AGENDA_SECTIONS_STEP;
+    setVisibleSectionLimit(nextLimit);
 
-  const handleEndReached = () => {
-    if (!canLoadMoreRef.current || loadMoreState !== 'idle') {
+    // Acabaram os dias ja carregados: busca o proximo bloco antes que ela chegue nele.
+    if (nextLimit >= allSections.length && loadMoreState === 'idle') {
+      extendAgendaWindow();
+    }
+  };
+
+  // Depois de salvar, so mexe na view se o dia salvo nao estiver a vista.
+  // Assim criar para hoje nao tira amanha da tela, e criar para daqui a 20 dias
+  // ainda mostra o que acabou de ser criado.
+  const revealSavedAppointment = async (startAt) => {
+    if (sections.some((section) => section.key === getLocalDateKey(startAt))) {
       return;
     }
-    // Sem essa guarda, uma agenda curta dispara onEndReached ja na montagem e
-    // encadeia requisicoes ate o teto de lookahead.
-    canLoadMoreRef.current = false;
-    extendAgendaWindow();
-  };
 
-  // Sem getItemLayout (os cards tem altura variavel) o scroll para um indice ainda
-  // nao renderizado falha; aqui aproximamos e tentamos de novo, no maximo 3 vezes.
-  const handleScrollToIndexFailed = (info) => {
-    const target = scrollTargetRef.current;
-
-    if (!target || target.attempts >= 3) {
-      scrollTargetRef.current = null;
-      return;
-    }
-
-    target.attempts += 1;
-    sectionListRef.current?.getScrollResponder()?.scrollTo({
-      y: Math.max(0, (info.averageItemLength || 96) * info.index),
-      animated: false,
-    });
-
-    setTimeout(() => {
-      const sectionIndex = findSectionIndexByKey(sectionsRef.current, target.key);
-      if (sectionIndex >= 0) {
-        sectionListRef.current?.scrollToLocation({
-          sectionIndex,
-          itemIndex: 0,
-          viewPosition: 0,
-          animated: false,
-        });
-      }
-    }, 120);
+    const target = startOfLocalDay(startAt);
+    animateNextLayout();
+    setSelectedDate(target);
+    setVisibleCalendarMonth(new Date(target.getFullYear(), target.getMonth(), 1));
+    setAgendaViewMode('dia');
+    await ensureDateVisible(target);
   };
 
   useEffect(() => {
@@ -721,34 +746,6 @@ const AgendaScreen = () => {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Rola ate a secao pedida. Depende de `sections` porque a secao pode so
-  // existir depois que a janela terminar de carregar.
-  useEffect(() => {
-    const target = scrollTargetRef.current;
-
-    // `consumed` evita que qualquer mudanca posterior em `sections` (troca de
-    // status, carregar mais dias) role a lista de volta para o alvo antigo.
-    if (!target || target.consumed || sections.length === 0) {
-      return;
-    }
-
-    const sectionIndex = findSectionIndexByKey(sections, target.key);
-
-    if (sectionIndex < 0) {
-      return;
-    }
-
-    target.consumed = true;
-    sectionListRef.current?.scrollToLocation({
-      sectionIndex,
-      itemIndex: 0,
-      viewPosition: 0,
-      viewOffset: 0,
-      animated: !reduceMotionEnabled,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollRequestId, sections]);
 
   useEffect(() => {
     if (!modalVisible) {
@@ -1062,7 +1059,7 @@ const AgendaScreen = () => {
         });
         closeModal();
         refreshCalendarMarksForDates([previousAppointment?.startAt, updated.startAt]);
-        focusDate(new Date(updated.startAt));
+        revealSavedAppointment(updated.startAt);
       } catch (error) {
         if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
@@ -1084,8 +1081,7 @@ const AgendaScreen = () => {
       }
       closeModal();
       refreshCalendarMarksForDates([created.startAt]);
-      // Leva a usuaria ate o dia salvo, mesmo que ele esteja fora da janela atual.
-      focusDate(new Date(created.startAt));
+      revealSavedAppointment(created.startAt);
     } catch (error) {
       if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
@@ -1629,7 +1625,20 @@ const AgendaScreen = () => {
 
   const renderAgendaFooter = () => (
     <View>
-      {windowSummary.appointments === 0 && renderEmptyAgenda()}
+      {isAgendaEmpty && renderEmptyAgenda()}
+
+      {canShowMoreSections && loadMoreState !== 'loading' && (
+        <TouchableOpacity
+          style={styles.showMoreButton}
+          hitSlop={{ top: 10, right: 24, bottom: 10, left: 24 }}
+          onPress={handleShowMoreSections}
+          accessibilityRole="button"
+          accessibilityLabel="Exibir mais agendamentos"
+        >
+          <Ionicons name="chevron-down" size={18} color={colors.darkGray} />
+        </TouchableOpacity>
+      )}
+
       {loadMoreState === 'loading' && (
         <Text style={styles.footerText}>Carregando mais dias...</Text>
       )}
@@ -1637,9 +1646,6 @@ const AgendaScreen = () => {
         <TouchableOpacity style={styles.footerButton} onPress={extendAgendaWindow}>
           <Text style={styles.footerButtonText}>Não deu para carregar. Tentar novamente</Text>
         </TouchableOpacity>
-      )}
-      {loadMoreState === 'exhausted' && (
-        <Text style={styles.footerText}>Você chegou ao fim dos próximos 12 meses.</Text>
       )}
     </View>
   );
@@ -1714,7 +1720,7 @@ const AgendaScreen = () => {
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
         <View style={styles.headerActions}>
-          {!isWindowShowingToday && (
+          {showTodayButton && (
             <TouchableOpacity style={styles.todayButton} onPress={handleBackToToday}>
               <Text style={styles.todayButtonText}>Hoje</Text>
             </TouchableOpacity>
@@ -1749,20 +1755,19 @@ const AgendaScreen = () => {
             <Text style={styles.summaryLabel}>Previsto</Text>
             <Text style={styles.summaryValue}>{formatCurrency(windowSummary.forecast)}</Text>
           </View>
-          <View>
-            <Text style={styles.summaryLabel}>Dias ocupados</Text>
-            <Text style={styles.summaryValue}>{windowSummary.busyDays}</Text>
-          </View>
+          {agendaViewMode === 'lista' && (
+            <View>
+              <Text style={styles.summaryLabel}>Dias ocupados</Text>
+              <Text style={styles.summaryValue}>{windowSummary.busyDays}</Text>
+            </View>
+          )}
         </View>
-        <Text style={styles.summaryPeriod}>
-          {formatShortDate(agendaWindow.start)} a {formatShortDate(agendaWindow.end)}
-        </Text>
+        <Text style={styles.summaryPeriod}>{visibleRangeLabel}</Text>
       </View>
 
       <SectionList
-        ref={sectionListRef}
         style={styles.list}
-        sections={sections}
+        sections={listSections}
         keyExtractor={(item) => (
           isDayPlaceholder(item) ? `empty-${item.dateKey}` : String(item.id)
         )}
@@ -1775,10 +1780,6 @@ const AgendaScreen = () => {
           { paddingBottom: 96 + bottomInset },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        onEndReachedThreshold={AGENDA_END_REACHED_THRESHOLD}
-        onMomentumScrollBegin={() => { canLoadMoreRef.current = true; }}
-        onEndReached={handleEndReached}
-        onScrollToIndexFailed={handleScrollToIndexFailed}
         onScrollBeginDrag={closeAppointmentActions}
         ListFooterComponent={renderAgendaFooter}
         initialNumToRender={12}
@@ -2163,6 +2164,13 @@ const styles = StyleSheet.create({
   emptyDayText: {
     color: colors.darkGray,
     fontSize: 13,
+  },
+  // Deliberadamente discreta: so a setinha, sem borda, fundo ou texto.
+  showMoreButton: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    opacity: 0.65,
   },
   footerText: {
     marginTop: 8,
