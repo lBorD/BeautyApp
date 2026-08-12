@@ -4,13 +4,13 @@ import {
   buildAgendaSections,
   buildAgendaWindow,
   endOfLocalDay,
-  findSectionIndexByKey,
   getLocalDateKey,
   getNextAgendaWindowBlock,
   getRelativeDayLabel,
   isDayPlaceholder,
   isWithinWindow,
   mergeAppointmentsById,
+  selectAgendaSections,
   startOfLocalDay,
   summarizeAgendaSections,
 } from '../agendaWindow';
@@ -202,17 +202,97 @@ describe('resumo do periodo', () => {
 });
 
 describe('navegacao entre secoes', () => {
-  it('acha o indice da secao pelo dia', () => {
-    const sections = sectionsFor([
-      buildAppointment({ id: 1, dayOffset: 2 }),
-      buildAppointment({ id: 2, dayOffset: 5 }),
-    ]);
-
-    expect(findSectionIndexByKey(sections, '2026-08-16')).toBe(2);
-    expect(findSectionIndexByKey(sections, '2026-08-20')).toBe(-1);
-  });
-
   it('nao rotula dias distantes como hoje ou amanha', () => {
     expect(getRelativeDayLabel(atLocalTime(2, 9), TODAY)).toBeNull();
+  });
+});
+
+describe('recorte do que fica visivel', () => {
+  const manyDays = [
+    buildAppointment({ id: 1, dayOffset: 0 }),
+    buildAppointment({ id: 2, dayOffset: 1 }),
+    buildAppointment({ id: 3, dayOffset: 4 }),
+    buildAppointment({ id: 4, dayOffset: 7 }),
+  ];
+
+  const asList = (sections, limit) => selectAgendaSections(sections, {
+    mode: 'lista',
+    selectedDateKey: null,
+    limit,
+  });
+
+  it('corta em 2 secoes no modo lista', () => {
+    const visible = asList(sectionsFor(manyDays), 2);
+
+    expect(visible.map((section) => section.key)).toEqual(['2026-08-11', '2026-08-12']);
+  });
+
+  it('hoje e sempre a primeira secao, mesmo vazio', () => {
+    // Cenario do bug: hoje sem atendimento, proximo em 3 dias.
+    const visible = asList(sectionsFor([buildAppointment({ id: 1, dayOffset: 3 })]), 2);
+
+    expect(visible.map((section) => section.key)).toEqual(['2026-08-11', '2026-08-14']);
+    expect(isDayPlaceholder(visible[0].data[0])).toBe(true);
+  });
+
+  it('pula dias vazios porque eles nao viram secao', () => {
+    // Amanha vazio: a segunda vaga vai para o proximo dia COM atendimento.
+    const visible = asList(sectionsFor([
+      buildAppointment({ id: 1, dayOffset: 0 }),
+      buildAppointment({ id: 2, dayOffset: 4 }),
+    ]), 2);
+
+    expect(visible.map((section) => section.key)).toEqual(['2026-08-11', '2026-08-15']);
+  });
+
+  it('revela mais dias quando o limite cresce', () => {
+    const sections = sectionsFor(manyDays);
+
+    expect(asList(sections, 4)).toHaveLength(4);
+    expect(asList(sections, 99)).toHaveLength(sections.length);
+  });
+
+  it('nunca devolve lista vazia no modo lista', () => {
+    expect(asList(sectionsFor(manyDays), 0)).toHaveLength(1);
+  });
+
+  it('devolve so a data escolhida no modo dia', () => {
+    const visible = selectAgendaSections(sectionsFor(manyDays, atLocalTime(4, 9)), {
+      mode: 'dia',
+      selectedDateKey: '2026-08-15',
+      limit: 2,
+    });
+
+    expect(visible).toHaveLength(1);
+    expect(visible[0].key).toBe('2026-08-15');
+    expect(visible[0].data.map((item) => item.id)).toEqual([3]);
+  });
+
+  it('no modo dia, dia sem atendimento vem com placeholder', () => {
+    const chosen = atLocalTime(6, 9);
+    const visible = selectAgendaSections(sectionsFor(manyDays, chosen), {
+      mode: 'dia',
+      selectedDateKey: getLocalDateKey(chosen),
+      limit: 2,
+    });
+
+    expect(visible).toHaveLength(1);
+    expect(visible[0].key).toBe('2026-08-17');
+    expect(isDayPlaceholder(visible[0].data[0])).toBe(true);
+  });
+
+  it('resumo do topo acompanha so o que esta visivel', () => {
+    const sections = sectionsFor([
+      buildAppointment({ id: 1, dayOffset: 0, price: 100 }),
+      buildAppointment({ id: 2, dayOffset: 1, price: 200 }),
+      buildAppointment({ id: 3, dayOffset: 5, price: 900 }),
+    ]);
+
+    expect(summarizeAgendaSections(asList(sections, 2))).toEqual({
+      appointments: 2,
+      forecast: 300,
+      busyDays: 2,
+    });
+    expect(summarizeAgendaSections(asList(sections, 99)).forecast).toBe(1200);
   });
 });

@@ -197,6 +197,13 @@ export const summarizeAgendaSections = (sections) => sections.reduce((totals, se
   busyDays: totals.busyDays + (section.activeCount > 0 ? 1 : 0),
 }), { appointments: 0, forecast: 0, busyDays: 0 });
 
-export const findSectionIndexByKey = (sections, dateKey) => (
-  sections.findIndex((section) => section.key === dateKey)
+// Recorta o que fica visivel na tela.
+//
+// No modo 'dia' mostra so a data escolhida no calendario. No modo 'lista' corta
+// nas primeiras `limit` secoes: como dia vazio nao gera secao, isso e o mesmo
+// que "hoje mais o proximo dia com atendimento".
+export const selectAgendaSections = (sections, { mode, selectedDateKey, limit }) => (
+  mode === 'dia'
+    ? sections.filter((section) => section.key === selectedDateKey)
+    : sections.slice(0, Math.max(limit, 1))
 );
