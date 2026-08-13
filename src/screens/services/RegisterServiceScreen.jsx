@@ -6,9 +6,11 @@ import Button from '../../components/button';
 import FeedbackModal from '../../components/FeedbackModal';
 import { registerService } from '../../services/private/serviceAPI';
 import colors from '../../constants/colors';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function RegisterServiceScreen() {
+  const topPadding = useScreenTopPadding();
   const navigation = useNavigation();
   const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const [formData, setFormData] = useState({
@@ -148,7 +150,7 @@ export default function RegisterServiceScreen() {
 
   return (
     <>
-      <ScrollView style={styles.container}>
+      <ScrollView style={[styles.container, { paddingTop: topPadding }]}>
         <View style={styles.formContainer}>
           <Text style={styles.title}>Cadastro de Serviço</Text>
 
@@ -227,7 +229,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 50,
   },
   formContainer: {
     padding: 20,

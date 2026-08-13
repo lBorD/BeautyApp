@@ -25,6 +25,7 @@ import formatPhoneNumber from '../../utils/formatNumber';
 import { validateFormData } from '../../utils/validations';
 import { formatBirthDay, formatDate, formatDateForInput } from '../../utils/formatBirthday';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 
 const getInitialEditedClient = () => ({
   name: '',
@@ -44,6 +45,7 @@ const hasOptionalClientInfo = (client) => Boolean(
 
 const ClientScreen = () => {
   const navigation = useNavigation();
+  const topPadding = useScreenTopPadding();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -243,7 +245,7 @@ const ClientScreen = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.header}>
         <Text style={styles.screenTitle}>Clientes</Text>
         <HeaderAddButton
@@ -404,7 +406,6 @@ const ClientScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
     backgroundColor: colors.background,
   },
   header: {
