@@ -10,9 +10,11 @@ import { validateFormData } from '../../utils/validations';
 import { formatBirthDay, formatDate } from '../../utils/formatBirthday';
 import colors from '../../constants/colors';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 
 export default function RegisterClientScreeen() {
   const navigation = useNavigation();
+  const topPadding = useScreenTopPadding();
   const { feedback, showFeedback, hideFeedback } = useFeedbackModal();
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [formData, setFormData] = useState({
@@ -95,7 +97,7 @@ export default function RegisterClientScreeen() {
 
   return (
     <>
-      <ScrollView style={styles.container}>
+      <ScrollView style={[styles.container, { paddingTop: topPadding }]}>
         <View style={styles.formContainer}>
           <Text style={styles.title}>Cadastro de Cliente</Text>
 
@@ -199,7 +201,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 50,
   },
   formContainer: {
     padding: 20,

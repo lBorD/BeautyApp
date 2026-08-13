@@ -24,6 +24,7 @@ import DateTimePickerModal from '../../components/DateTimePickerModal';
 import GoogleSyncBadge from './GoogleSyncBadge';
 import colors from '../../constants/colors';
 import useCurrencyInput from '../../hooks/useCurrencyInput';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import {
   calculateDepositAmount,
   calculateRemainingAmount,
@@ -178,6 +179,7 @@ const AgendaScreen = () => {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const bottomInset = Math.max(insets.bottom, 8);
+  const topPadding = useScreenTopPadding();
   const screenRef = useRef(null);
   const actionButtonRefs = useRef({});
   // "Hoje" fica congelado na montagem para os rotulos nao mudarem sozinhos
@@ -1712,7 +1714,7 @@ const AgendaScreen = () => {
   }
 
   return (
-    <View ref={screenRef} style={styles.container}>
+    <View ref={screenRef} style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
         <View style={styles.headerActions}>
@@ -2029,7 +2031,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 56,
     paddingHorizontal: 16,
   },
   loadingContainer: {

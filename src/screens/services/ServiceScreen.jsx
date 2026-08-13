@@ -7,11 +7,13 @@ import FeedbackModal from '../../components/FeedbackModal';
 import HeaderAddButton from '../../components/HeaderAddButton';
 import SearchInput from '../../components/SearchInput';
 import colors from '../../constants/colors';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import { Ionicons } from '@expo/vector-icons';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 const ServiceScreen = () => {
+  const topPadding = useScreenTopPadding();
   const navigation = useNavigation();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -147,7 +149,7 @@ const ServiceScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Serviços</Text>
         <HeaderAddButton
@@ -272,7 +274,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 50,
   },
   header: {
     flexDirection: 'row',
