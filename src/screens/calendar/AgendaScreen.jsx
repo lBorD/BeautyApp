@@ -53,6 +53,7 @@ import {
   startOfLocalDay,
   summarizeAgendaSections,
 } from './agendaWindow';
+import { getAppointmentActions } from './appointmentActions';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -90,6 +91,19 @@ const statusColors = {
   scheduled: '#1677ff',
   canceled: colors.error,
   completed: colors.success,
+};
+
+const ACTION_TONE_COLORS = {
+  primary: colors.primary,
+  success: colors.success,
+  destructive: colors.error,
+};
+
+// No card o badge do Google fica compacto; aqui cabe a frase inteira.
+const googleSyncDetailLabels = {
+  pending: 'Aguardando sincronizar com o Google Agenda',
+  synced: 'Sincronizado com o Google Agenda',
+  failed: 'Não foi possível sincronizar com o Google Agenda',
 };
 
 const getAppointmentServices = (appointment) => {
@@ -226,6 +240,7 @@ const AgendaScreen = () => {
   const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
   const [archiveConfirmationId, setArchiveConfirmationId] = useState(null);
   const [archivingAppointmentId, setArchivingAppointmentId] = useState(null);
+  const [detailsAppointmentId, setDetailsAppointmentId] = useState(null);
   const [statusAnimationAppointmentId, setStatusAnimationAppointmentId] = useState(null);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const actionMenuAnimation = useRef(new Animated.Value(0)).current;
@@ -294,17 +309,23 @@ const AgendaScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (expandedAppointmentId === null) {
+    if (expandedAppointmentId === null && detailsAppointmentId === null) {
       return undefined;
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeAppointmentActions();
+      // O popover fica por cima dos detalhes, entao fecha primeiro.
+      if (expandedAppointmentId !== null) {
+        closeAppointmentActions();
+        return true;
+      }
+
+      closeAppointmentDetails();
       return true;
     });
 
     return () => subscription.remove();
-  }, [closeAppointmentActions, expandedAppointmentId]);
+  }, [closeAppointmentActions, closeAppointmentDetails, detailsAppointmentId, expandedAppointmentId]);
 
   const selectedServices = useMemo(
     () => form.serviceIds
@@ -360,6 +381,13 @@ const AgendaScreen = () => {
   const activeAppointments = useMemo(
     () => appointments.filter((item) => !isCanceledAppointment(item)),
     [appointments],
+  );
+
+  // Busca pelo id em vez de guardar o objeto: assim os detalhes acompanham
+  // mudancas de status feitas de dentro do proprio modal.
+  const detailsAppointment = useMemo(
+    () => appointments.find((item) => String(item.id) === String(detailsAppointmentId)) || null,
+    [appointments, detailsAppointmentId],
   );
 
   const allSections = useMemo(() => buildAgendaSections({
@@ -1258,6 +1286,9 @@ const AgendaScreen = () => {
         String(item.id) === String(appointment.id) ? canceledAppointment : item
       ))));
       closeAppointmentActions();
+      // O cancelado continua na lista, entao os detalhes seguem validos: so
+      // encerramos a confirmacao para o modal voltar a mostrar as acoes.
+      setDeleteConfirmationId(null);
       refreshCalendarMarksForDates([appointment.startAt]);
     } catch (error) {
       Alert.alert('Erro', error.response?.data?.error || 'Não foi possível cancelar o atendimento.');
@@ -1288,6 +1319,8 @@ const AgendaScreen = () => {
     animateNextLayout();
     setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
     closeAppointmentActions();
+    // Apagado some da lista, entao o modal de detalhes nao tem mais o que mostrar.
+    closeAppointmentDetails();
 
     try {
       await archiveAppointment(appointment.id);
@@ -1305,6 +1338,132 @@ const AgendaScreen = () => {
     }
   };
 
+  const openAppointmentDetails = (appointment) => {
+    closeAppointmentActions();
+    animateNextLayout();
+    setDetailsAppointmentId(appointment.id);
+  };
+
+  const closeAppointmentDetails = useCallback(() => {
+    animateNextLayout();
+    setDetailsAppointmentId(null);
+    setDeleteConfirmationId(null);
+    setArchiveConfirmationId(null);
+  }, [animateNextLayout]);
+
+  // Um so despachante para as duas entradas (popover e modal de detalhes),
+  // garantindo que a mesma acao se comporte igual venha de onde vier.
+  const runAppointmentAction = (actionKey, appointment, { fromDetails = false } = {}) => {
+    switch (actionKey) {
+      case 'edit':
+        if (fromDetails) closeAppointmentDetails();
+        openEditModal(appointment);
+        break;
+      // Trocar status nao fecha os detalhes: o modal le do `appointments`, entao
+      // o badge e a lista de acoes se atualizam na hora e da para desfazer ali mesmo.
+      case 'complete':
+        handleStatusChange(appointment.id, 'completed');
+        break;
+      case 'reschedule':
+      case 'restore':
+        handleStatusChange(appointment.id, 'scheduled');
+        break;
+      // Cancelar e apagar pedem confirmacao. Ela e renderizada no mesmo lugar de
+      // onde a acao partiu, entao aqui so marcamos qual confirmacao esta ativa.
+      case 'cancel':
+        openDeleteConfirmation(appointment.id);
+        break;
+      case 'archive':
+        openArchiveConfirmation(appointment.id);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Usado pelo popover e pelo modal de detalhes, a partir da mesma lista.
+  const renderAppointmentActionList = (appointment, { fromDetails = false } = {}) => (
+    getAppointmentActions(appointment.status).map((action) => (
+      <TouchableOpacity
+        key={action.key}
+        style={styles.actionMenuItem}
+        onPress={() => runAppointmentAction(action.key, appointment, { fromDetails })}
+        accessibilityRole="button"
+        accessibilityLabel={action.label}
+      >
+        <Ionicons name={action.icon} size={18} color={ACTION_TONE_COLORS[action.tone]} />
+        <Text style={[
+          styles.actionMenuText,
+          action.tone === 'destructive' && styles.destructiveActionText,
+        ]}>
+          {action.label}
+        </Text>
+      </TouchableOpacity>
+    ))
+  );
+
+  const renderCancelConfirmation = (appointment) => {
+    const isDeleting = String(deletingAppointmentId) === String(appointment.id);
+
+    return (
+      <View style={styles.deleteConfirmation}>
+        <Text style={styles.deleteConfirmationTitle}>Cancelar atendimento?</Text>
+        <Text style={styles.deleteConfirmationText}>
+          Ele fica cancelado, sem ocupar o horário, e pode ser restaurado ou apagado depois.
+        </Text>
+        <View style={styles.deleteConfirmationActions}>
+          <TouchableOpacity
+            style={styles.deleteConfirmationSecondaryButton}
+            onPress={closeDeleteConfirmation}
+            disabled={isDeleting}
+          >
+            <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
+            onPress={() => handleDeleteAppointment(appointment)}
+            disabled={isDeleting}
+          >
+            <Text style={styles.deleteConfirmationButtonText}>
+              {isDeleting ? 'Cancelando...' : 'Cancelar atendimento'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderArchiveConfirmation = (appointment) => {
+    const isArchiving = String(archivingAppointmentId) === String(appointment.id);
+
+    return (
+      <View style={styles.deleteConfirmation}>
+        <Text style={styles.deleteConfirmationTitle}>Apagar da agenda?</Text>
+        <Text style={styles.deleteConfirmationText}>
+          Ele some da agenda para sempre e não poderá ser restaurado pelo app.
+        </Text>
+        <View style={styles.deleteConfirmationActions}>
+          <TouchableOpacity
+            style={styles.deleteConfirmationSecondaryButton}
+            onPress={closeArchiveConfirmation}
+            disabled={isArchiving}
+          >
+            <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteConfirmationButton, isArchiving && styles.disabledButton]}
+            onPress={() => handleArchiveAppointment(appointment)}
+            disabled={isArchiving}
+          >
+            <Text style={styles.deleteConfirmationButtonText}>
+              {isArchiving ? 'Apagando...' : 'Apagar da agenda'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderAppointmentActionsPopover = () => {
     const appointment = appointments.find((item) => (
       String(item.id) === String(expandedAppointmentId)
@@ -1315,9 +1474,7 @@ const AgendaScreen = () => {
     }
 
     const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
-    const isDeleting = String(deletingAppointmentId) === String(appointment.id);
     const isConfirmingArchive = String(archiveConfirmationId) === String(appointment.id);
-    const isArchiving = String(archivingAppointmentId) === String(appointment.id);
     const opensBelow = actionPopoverPosition.placement === 'below';
     const animatedPopoverStyle = {
       opacity: actionMenuAnimation,
@@ -1365,104 +1522,120 @@ const AgendaScreen = () => {
             animatedPopoverStyle,
           ]}
         >
-          {appointment.status === 'canceled' ? (
-            !isConfirmingArchive ? (
-              <>
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => handleStatusChange(appointment.id, 'scheduled')}
-                >
-                  <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
-                  <Text style={styles.actionMenuText}>Restaurar atendimento</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => openArchiveConfirmation(appointment.id)}
-                >
-                  <Ionicons name="trash-outline" size={18} color={colors.error} />
-                  <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
-                    Apagar da agenda
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <View style={styles.deleteConfirmation}>
-                <Text style={styles.deleteConfirmationTitle}>Apagar da agenda?</Text>
-                <Text style={styles.deleteConfirmationText}>
-                  Ele some da agenda para sempre e não poderá ser restaurado pelo app.
-                </Text>
-                <View style={styles.deleteConfirmationActions}>
-                  <TouchableOpacity
-                    style={styles.deleteConfirmationSecondaryButton}
-                    onPress={closeArchiveConfirmation}
-                    disabled={isArchiving}
-                  >
-                    <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.deleteConfirmationButton, isArchiving && styles.disabledButton]}
-                    onPress={() => handleArchiveAppointment(appointment)}
-                    disabled={isArchiving}
-                  >
-                    <Text style={styles.deleteConfirmationButtonText}>
-                      {isArchiving ? 'Apagando...' : 'Apagar da agenda'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )
-          ) : !isConfirmingDelete ? (
-            <>
-              <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(appointment)}>
-                <Ionicons name="create-outline" size={18} color={colors.primary} />
-                <Text style={styles.actionMenuText}>Editar agendamento</Text>
-              </TouchableOpacity>
-              {appointment.status === 'scheduled' && (
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => handleStatusChange(appointment.id, 'completed')}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
-                  <Text style={styles.actionMenuText}>Atendimento concluído</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={styles.actionMenuItem}
-                onPress={() => openDeleteConfirmation(appointment.id)}
-              >
-                <Ionicons name="close-circle-outline" size={18} color={colors.error} />
-                <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
-                  Cancelar atendimento
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <View style={styles.deleteConfirmation}>
-              <Text style={styles.deleteConfirmationTitle}>Cancelar atendimento?</Text>
-              <Text style={styles.deleteConfirmationText}>
-                Ele fica cancelado, sem ocupar o horário, e pode ser restaurado ou apagado depois.
+          {isConfirmingArchive
+            ? renderArchiveConfirmation(appointment)
+            : isConfirmingDelete
+              ? renderCancelConfirmation(appointment)
+              : renderAppointmentActionList(appointment)}
+        </Animated.View>
+      </View>
+    );
+  };
+
+  // Camada inline, nunca `Modal` nativo: empilhar modais quebrou a Agenda no iOS
+  // antes (#81) e essa tela ja segue esse padrao no formulario.
+  const renderAppointmentDetails = () => {
+    const appointment = detailsAppointment;
+
+    if (!appointment) {
+      return null;
+    }
+
+    const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
+    const isConfirmingArchive = String(archiveConfirmationId) === String(appointment.id);
+    const total = roundCurrency(Number(appointment.price || 0));
+    const deposit = roundCurrency(Number(appointment.depositAmount || 0));
+    const remaining = calculateRemainingAmount(total, deposit);
+
+    return (
+      <View style={styles.detailsOverlay} accessibilityViewIsModal>
+        <TouchableOpacity
+          style={styles.detailsBackdrop}
+          activeOpacity={1}
+          onPress={closeAppointmentDetails}
+          accessibilityRole="button"
+          accessibilityLabel="Fechar detalhes do atendimento"
+        />
+        <View style={[styles.detailsCard, { paddingBottom: 14 + bottomInset }]}>
+          <View style={styles.detailsHandle} />
+
+          <View style={styles.detailsHeader}>
+            <View style={styles.detailsHeaderMain}>
+              <Text style={styles.detailsTitle} numberOfLines={2}>
+                {appointment.clientName || 'Cliente'}
               </Text>
-              <View style={styles.deleteConfirmationActions}>
-                <TouchableOpacity
-                  style={styles.deleteConfirmationSecondaryButton}
-                  onPress={closeDeleteConfirmation}
-                  disabled={isDeleting}
-                >
-                  <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
-                  onPress={() => handleDeleteAppointment(appointment)}
-                  disabled={isDeleting}
-                >
-                  <Text style={styles.deleteConfirmationButtonText}>
-                    {isDeleting ? 'Cancelando...' : 'Cancelar atendimento'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.detailsSubtitle} numberOfLines={3}>
+                {getAppointmentServiceName(appointment) || 'Serviço'}
+              </Text>
+            </View>
+            <View style={[
+              styles.statusBadge,
+              { backgroundColor: statusColors[appointment.status] || colors.darkGray },
+            ]}>
+              <Text style={styles.statusBadgeText}>
+                {statusLabels[appointment.status] || appointment.status}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.detailsWhen}>
+            <Ionicons name="calendar-outline" size={16} color={colors.darkGray} />
+            <Text style={styles.detailsWhenText}>
+              {formatSectionDate(new Date(appointment.startAt))}
+              {'  ·  '}
+              {formatTime(appointment.startAt)} - {formatTime(appointment.endAt)}
+            </Text>
+          </View>
+
+          <View style={styles.detailsMoneyRow}>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Valor total</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(total)}</Text>
+            </View>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Sinal</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(deposit)}</Text>
+            </View>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Falta pagar</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(remaining)}</Text>
+            </View>
+          </View>
+
+          {Boolean(appointment.notes) && (
+            <View style={styles.detailsNotes}>
+              <Text style={styles.detailsNotesLabel}>Observações</Text>
+              <Text style={styles.detailsNotesText}>{appointment.notes}</Text>
             </View>
           )}
-        </Animated.View>
+
+          {Boolean(appointment.googleSyncStatus) && (
+            <View style={styles.detailsGoogleRow}>
+              <GoogleSyncBadge status={appointment.googleSyncStatus} reduceMotion />
+              <Text style={styles.detailsGoogleText}>
+                {googleSyncDetailLabels[appointment.googleSyncStatus] || ''}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.detailsActions}>
+            {isConfirmingArchive
+              ? renderArchiveConfirmation(appointment)
+              : isConfirmingDelete
+                ? renderCancelConfirmation(appointment)
+                : renderAppointmentActionList(appointment, { fromDetails: true })}
+          </View>
+
+          {!isConfirmingDelete && !isConfirmingArchive && (
+            <TouchableOpacity
+              style={styles.detailsCloseButton}
+              onPress={closeAppointmentDetails}
+              accessibilityRole="button"
+            >
+              <Text style={styles.detailsCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     );
   };
@@ -1515,6 +1688,12 @@ const AgendaScreen = () => {
     } : undefined;
 
     return (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => openAppointmentDetails(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Detalhes do atendimento de ${item.clientName || 'cliente'} às ${formatTime(item.startAt)}`}
+      >
       <Animated.View style={[
         styles.card,
         isCanceled && styles.canceledCard,
@@ -1578,6 +1757,7 @@ const AgendaScreen = () => {
         </View>
 
       </Animated.View>
+      </TouchableOpacity>
     );
   };
 
@@ -1789,6 +1969,8 @@ const AgendaScreen = () => {
       <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
+
+      {renderAppointmentDetails()}
 
       {renderAppointmentActionsPopover()}
 
@@ -2284,6 +2466,135 @@ const styles = StyleSheet.create({
     marginTop: 1,
     fontSize: 13,
     lineHeight: 18,
+  },
+  detailsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    zIndex: 16,
+    elevation: 16,
+  },
+  detailsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  detailsCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 18,
+  },
+  detailsHandle: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    marginBottom: 14,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  detailsHeaderMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  detailsTitle: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  detailsSubtitle: {
+    marginTop: 3,
+    color: colors.darkGray,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  detailsWhen: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  detailsWhenText: {
+    flexShrink: 1,
+    color: colors.text,
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+  detailsMoneyRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: colors.inputBackground,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  detailsMoneyItem: {
+    flexShrink: 1,
+  },
+  detailsMoneyLabel: {
+    color: colors.darkGray,
+    fontSize: 11,
+    marginBottom: 3,
+  },
+  detailsMoneyValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  detailsNotes: {
+    marginTop: 14,
+  },
+  detailsNotesLabel: {
+    color: colors.darkGray,
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  detailsNotesText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  detailsGoogleRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailsGoogleText: {
+    flexShrink: 1,
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  detailsActions: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 6,
+  },
+  detailsCloseButton: {
+    marginTop: 10,
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+  },
+  detailsCloseText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
   },
   actionPopoverOverlay: {
     ...StyleSheet.absoluteFillObject,
