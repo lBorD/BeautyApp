@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import colors from '../../constants/colors';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import { listAppointments } from '../../services/private/appointmentAPI';
 
@@ -322,6 +323,7 @@ const InsightModal = ({ insight, onClose }) => (
 );
 
 const FinancaScreen = () => {
+  const topPadding = useScreenTopPadding();
   const [appointments, setAppointments] = useState([]);
   const [referenceDate, setReferenceDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -466,7 +468,7 @@ const FinancaScreen = () => {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[styles.contentContainer, { paddingTop: topPadding }]}
       refreshControl={(
         <RefreshControl
           refreshing={refreshing}
@@ -579,7 +581,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   contentContainer: {
-    paddingTop: 56,
     paddingHorizontal: 16,
     paddingBottom: 32,
   },

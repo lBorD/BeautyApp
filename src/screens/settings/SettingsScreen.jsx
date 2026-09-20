@@ -12,6 +12,7 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../../constants/colors';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
@@ -29,6 +30,7 @@ const GOOGLE_CLIENT_ID = Constants.expoConfig?.extra?.googleOAuthClientId || '';
 const GOOGLE_REDIRECT_URI = 'com.bordd.beautyapp:/oauth/google';
 
 const SettingsScreen = () => {
+  const topPadding = useScreenTopPadding();
   const [calendarStatus, setCalendarStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -168,7 +170,7 @@ const SettingsScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topPadding }]}>
       <Text style={styles.title}>Configurações</Text>
 
       <View style={styles.section}>
@@ -242,7 +244,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
-    paddingTop: 56,
   },
   title: {
     fontSize: 28,

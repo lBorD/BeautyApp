@@ -4,11 +4,11 @@ import {
   Alert,
   Animated,
   BackHandler,
-  FlatList,
   LayoutAnimation,
   Platform,
   RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -21,26 +21,60 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
+import GoogleSyncBadge from './GoogleSyncBadge';
 import colors from '../../constants/colors';
+import useCurrencyInput from '../../hooks/useCurrencyInput';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
+import {
+  calculateDepositAmount,
+  calculateRemainingAmount,
+  formatCurrency,
+  inferDepositPercent,
+  isSameCurrencyAmount,
+  roundCurrency,
+} from '../../utils/currency';
+import {
+  AGENDA_MAX_LOOKAHEAD_DAYS,
+  AGENDA_WINDOW_DAYS,
+  addLocalDays,
+  buildAgendaSections,
+  buildAgendaWindow,
+  buildCalendarGridUtcRange,
+  endOfLocalDay,
+  getLocalDateKey,
+  getMonthKey,
+  getNextAgendaWindowBlock,
+  isCanceledAppointment,
+  isDayPlaceholder,
+  isWithinWindow,
+  mergeAppointmentsById,
+  selectAgendaSections,
+  sortAppointments,
+  startOfLocalDay,
+  summarizeAgendaSections,
+} from './agendaWindow';
+import { getAppointmentActions } from './appointmentActions';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
+  archiveAppointment,
   createAppointment,
   listAppointments,
   updateAppointment,
   updateAppointmentStatus,
 } from '../../services/private/appointmentAPI';
 
-const SLOT_STEP_MINUTES = 30;
 const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 19;
 const CLIENT_SEARCH_LIMIT = 30;
 const DEFAULT_DEPOSIT_PERCENT = 0;
 const DEPOSIT_PERCENT_OPTIONS = [0, 15, 30];
-const CALENDAR_LOOKAHEAD_DAYS = 90;
+// A lista fica curta de proposito: hoje mais o proximo dia com atendimento.
+// A setinha do rodape revela os demais, de dois em dois.
+const AGENDA_VISIBLE_SECTIONS = 2;
+const AGENDA_SECTIONS_STEP = 2;
 const ACTION_ANIMATION_DURATION = 180;
 const ACTION_POPOVER_MAX_WIDTH = 268;
-const ACTION_POPOVER_ESTIMATED_HEIGHT = 210;
+const ACTION_POPOVER_ESTIMATED_HEIGHT = 250;
 const ACTION_POPOVER_SCREEN_MARGIN = 16;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -59,27 +93,18 @@ const statusColors = {
   completed: colors.success,
 };
 
-const isCanceledAppointment = (appointment) => appointment.status === 'canceled';
-
-const googleSyncLabels = {
-  pending: 'Google pendente',
-  synced: 'Google sincronizado',
-  failed: 'Falha no Google',
+const ACTION_TONE_COLORS = {
+  primary: colors.primary,
+  success: colors.success,
+  destructive: colors.error,
 };
 
-const googleSyncColors = {
-  pending: colors.warning,
-  synced: colors.success,
-  failed: colors.error,
+// No card o badge do Google fica compacto; aqui cabe a frase inteira.
+const googleSyncDetailLabels = {
+  pending: 'Aguardando sincronizar com o Google Agenda',
+  synced: 'Sincronizado com o Google Agenda',
+  failed: 'Não foi possível sincronizar com o Google Agenda',
 };
-
-const sortAppointments = (items) => [...items].sort(
-  (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
-);
-
-const filterNonCanceledAppointments = (items) => (
-  items.filter((item) => !isCanceledAppointment(item))
-);
 
 const getAppointmentServices = (appointment) => {
   if (Array.isArray(appointment.services) && appointment.services.length > 0) {
@@ -128,138 +153,19 @@ const getAppointmentServiceName = (appointment) => {
     .join(' + ');
 };
 
-const buildDayUtcRange = (date) => {
-  const from = new Date(date);
-  from.setHours(0, 0, 0, 0);
-
-  const to = new Date(date);
-  to.setHours(23, 59, 59, 999);
-
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  };
-};
-
-const padDatePart = (value) => String(value).padStart(2, '0');
-
-const getLocalDateKey = (dateValue) => {
-  const date = new Date(dateValue);
-  return [
-    date.getFullYear(),
-    padDatePart(date.getMonth() + 1),
-    padDatePart(date.getDate()),
-  ].join('-');
-};
-
-const getMonthKey = (dateValue) => {
-  const date = new Date(dateValue);
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}`;
-};
-
-const buildCalendarGridUtcRange = (monthValue) => {
-  const month = new Date(monthValue);
-  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
-  const from = new Date(firstDay);
-  from.setDate(firstDay.getDate() - firstDay.getDay());
-  from.setHours(0, 0, 0, 0);
-
-  const to = new Date(from);
-  to.setDate(from.getDate() + 41);
-  to.setHours(23, 59, 59, 999);
-
-  return { from: from.toISOString(), to: to.toISOString() };
-};
-
-const buildInitialAgendaUtcRange = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const from = new Date(today);
-  from.setDate(today.getDate() + 1);
-
-  const to = new Date(today);
-  to.setDate(today.getDate() + CALENDAR_LOOKAHEAD_DAYS);
-  to.setHours(23, 59, 59, 999);
-
-  return { from: from.toISOString(), to: to.toISOString() };
-};
-
-const isSameLocalDay = (firstDate, secondDate) => (
-  getLocalDateKey(firstDate) === getLocalDateKey(secondDate)
-);
-
-const formatCurrency = (value = 0) => Number(value).toLocaleString('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-});
-
-const roundCurrency = (value = 0) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-
 const calculateServicesTotal = (services) => services.reduce((totals, service) => ({
   price: totals.price + Number(service.price || 0),
   estimatedTime: totals.estimatedTime + Number(service.estimatedTime || 0),
 }), { price: 0, estimatedTime: 0 });
-
-const calculateDepositAmount = (price = 0, percent = DEFAULT_DEPOSIT_PERCENT) => (
-  roundCurrency((Number(price || 0) * Number(percent || 0)) / 100)
-);
-
-const formatCurrencyInput = (value = 0) => roundCurrency(value).toLocaleString('pt-BR', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-const sanitizeCurrencyInput = (value = '') => String(value).replace(/[^\d.,]/g, '');
-
-const parseCurrencyInput = (value = '') => {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? roundCurrency(value) : null;
-  }
-
-  const sanitizedValue = sanitizeCurrencyInput(value);
-  if (!sanitizedValue) {
-    return 0;
-  }
-
-  const lastComma = sanitizedValue.lastIndexOf(',');
-  const lastDot = sanitizedValue.lastIndexOf('.');
-  const normalizedValue = lastComma > lastDot
-    ? sanitizedValue.replace(/\./g, '').replace(',', '.')
-    : sanitizedValue.replace(/,/g, '');
-  const parsedValue = Number(normalizedValue);
-
-  return Number.isFinite(parsedValue) ? roundCurrency(parsedValue) : null;
-};
-
-const calculateRemainingAmount = (price = 0, depositAmount = 0) => {
-  const total = Math.max(Number(price || 0), 0);
-  const deposit = Math.max(Number(depositAmount || 0), 0);
-  return roundCurrency(Math.max(total - deposit, 0));
-};
-
-const isSameCurrencyAmount = (firstValue = 0, secondValue = 0) => (
-  Math.abs(roundCurrency(firstValue) - roundCurrency(secondValue)) < 0.01
-);
-
-const inferDepositPercent = (depositAmount = 0, price = 0) => {
-  const numericPrice = Number(price || 0);
-  const numericDeposit = Number(depositAmount || 0);
-
-  if (!numericPrice || !Number.isFinite(numericPrice) || !Number.isFinite(numericDeposit)) {
-    return null;
-  }
-
-  return DEPOSIT_PERCENT_OPTIONS.find((option) => (
-    isSameCurrencyAmount(calculateDepositAmount(numericPrice, option), numericDeposit)
-  )) ?? null;
-};
 
 const formatDateLabel = (date) => date.toLocaleDateString('pt-BR', {
   weekday: 'long',
   day: '2-digit',
   month: 'long',
 });
+
+// "quinta-feira, 13 de agosto" fica longo demais no cabecalho da secao.
+const formatSectionDate = (date) => formatDateLabel(date).replace('-feira', '');
 
 const formatShortDate = (date) => date.toLocaleDateString('pt-BR', {
   day: '2-digit',
@@ -282,30 +188,22 @@ const isAppointmentConflictError = (error) => error?.response?.status === 409;
 
 const hasTimeOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
-const createBaseSlots = (date) => {
-  const slots = [];
-  const cursor = new Date(date);
-  cursor.setHours(DAY_START_HOUR, 0, 0, 0);
-
-  const end = new Date(date);
-  end.setHours(DAY_END_HOUR, 0, 0, 0);
-
-  while (cursor < end) {
-    slots.push(new Date(cursor));
-    cursor.setMinutes(cursor.getMinutes() + SLOT_STEP_MINUTES);
-  }
-
-  return slots;
-};
-
 const AgendaScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const bottomInset = Math.max(insets.bottom, 8);
+  const topPadding = useScreenTopPadding();
   const screenRef = useRef(null);
   const actionButtonRefs = useRef({});
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // "Hoje" fica congelado na montagem para os rotulos nao mudarem sozinhos
+  // se o app ficar aberto durante a virada do dia.
+  const todayRef = useRef(startOfLocalDay(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay(new Date()));
+  // 'lista' = hoje + proximos, cortado em AGENDA_VISIBLE_SECTIONS.
+  // 'dia'   = so a data escolhida no calendario.
+  const [agendaViewMode, setAgendaViewMode] = useState('lista');
+  const [visibleSectionLimit, setVisibleSectionLimit] = useState(AGENDA_VISIBLE_SECTIONS);
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() => {
     const today = new Date();
@@ -315,8 +213,14 @@ const AgendaScreen = () => {
   const calendarMarksCacheRef = useRef({});
   const calendarCacheGenerationRef = useRef(0);
   const calendarRequestIdsRef = useRef({});
-  const didBootstrapRef = useRef(false);
-  const skipSelectedDateEffectRef = useRef(false);
+
+  const [agendaWindow, setAgendaWindow] = useState(() => {
+    const window = buildAgendaWindow(startOfLocalDay(new Date()));
+    return { start: window.start, end: window.end };
+  });
+  // Espelha a janela para os handlers assincronos nao lerem closure velha.
+  const windowRangeRef = useRef(agendaWindow);
+  const [loadMoreState, setLoadMoreState] = useState('idle');
 
   const [appointments, setAppointments] = useState([]);
   const [clients, setClients] = useState([]);
@@ -334,6 +238,9 @@ const AgendaScreen = () => {
   const [actionPopoverPosition, setActionPopoverPosition] = useState(null);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
   const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
+  const [archiveConfirmationId, setArchiveConfirmationId] = useState(null);
+  const [archivingAppointmentId, setArchivingAppointmentId] = useState(null);
+  const [detailsAppointmentId, setDetailsAppointmentId] = useState(null);
   const [statusAnimationAppointmentId, setStatusAnimationAppointmentId] = useState(null);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const actionMenuAnimation = useRef(new Animated.Value(0)).current;
@@ -352,10 +259,12 @@ const AgendaScreen = () => {
     startAt: new Date(),
     depositPercent: DEFAULT_DEPOSIT_PERCENT,
     depositAmount: 0,
-    depositAmountInput: formatCurrencyInput(0),
     depositMode: 'percent',
     notes: '',
   });
+  // Forca o campo de sinal a redesenhar quando o valor externo nao muda de numero
+  // mas o texto precisa voltar ao normalizado (chip 0% com campo zerado, reabrir o modal).
+  const [depositSyncToken, setDepositSyncToken] = useState(0);
 
   const canSchedule = hasClientRecords && services.length > 0;
   const markedDates = calendarMarksByMonth[getMonthKey(visibleCalendarMonth)] || [];
@@ -379,6 +288,7 @@ const AgendaScreen = () => {
     setExpandedAppointmentId(null);
     setActionPopoverPosition(null);
     setDeleteConfirmationId(null);
+    setArchiveConfirmationId(null);
   }, [actionMenuAnimation]);
 
   useEffect(() => {
@@ -399,17 +309,23 @@ const AgendaScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (expandedAppointmentId === null) {
+    if (expandedAppointmentId === null && detailsAppointmentId === null) {
       return undefined;
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeAppointmentActions();
+      // O popover fica por cima dos detalhes, entao fecha primeiro.
+      if (expandedAppointmentId !== null) {
+        closeAppointmentActions();
+        return true;
+      }
+
+      closeAppointmentDetails();
       return true;
     });
 
     return () => subscription.remove();
-  }, [closeAppointmentActions, expandedAppointmentId]);
+  }, [closeAppointmentActions, closeAppointmentDetails, detailsAppointmentId, expandedAppointmentId]);
 
   const selectedServices = useMemo(
     () => form.serviceIds
@@ -467,20 +383,66 @@ const AgendaScreen = () => {
     [appointments],
   );
 
-  const freeSlotsCount = useMemo(() => {
-    const baseSlots = createBaseSlots(selectedDate);
-
-    return baseSlots.filter((slot) => !activeAppointments.some((appointment) => {
-      const startAt = new Date(appointment.startAt);
-      const endAt = new Date(appointment.endAt);
-      return slot >= startAt && slot < endAt;
-    })).length;
-  }, [activeAppointments, selectedDate]);
-
-  const totalForecast = useMemo(
-    () => activeAppointments.reduce((sum, item) => sum + Number(item.price || 0), 0),
-    [activeAppointments],
+  // Busca pelo id em vez de guardar o objeto: assim os detalhes acompanham
+  // mudancas de status feitas de dentro do proprio modal.
+  const detailsAppointment = useMemo(
+    () => appointments.find((item) => String(item.id) === String(detailsAppointmentId)) || null,
+    [appointments, detailsAppointmentId],
   );
+
+  const allSections = useMemo(() => buildAgendaSections({
+    appointments,
+    windowStart: agendaWindow.start,
+    windowEnd: agendaWindow.end,
+    referenceDate: todayRef.current,
+    // So no modo dia: no modo lista, um dia escolhido antes nao pode injetar secao.
+    focusedDate: agendaViewMode === 'dia' ? selectedDate : null,
+  }), [appointments, agendaWindow, agendaViewMode, selectedDate]);
+
+  const sections = useMemo(() => selectAgendaSections(allSections, {
+    mode: agendaViewMode,
+    selectedDateKey: getLocalDateKey(selectedDate),
+    limit: visibleSectionLimit,
+  }), [allSections, agendaViewMode, selectedDate, visibleSectionLimit]);
+
+  // O resumo do topo acompanha o que esta na tela, nao a janela carregada.
+  const windowSummary = useMemo(() => summarizeAgendaSections(sections), [sections]);
+
+  const hasAnyAppointmentInWindow = useMemo(
+    () => allSections.some((section) => section.data.some((item) => !isDayPlaceholder(item))),
+    [allSections],
+  );
+
+  // Sem nada na janela inteira, o estado vazio grande (com os atalhos de cadastro)
+  // substitui a lista. Senao apareceria junto do placeholder do dia, duplicado.
+  const isAgendaEmpty = agendaViewMode === 'lista' && !hasAnyAppointmentInWindow;
+  const listSections = isAgendaEmpty ? [] : sections;
+
+  const isWindowShowingToday = isWithinWindow(
+    todayRef.current,
+    agendaWindow.start,
+    agendaWindow.end,
+  );
+
+  const showTodayButton = agendaViewMode === 'dia' || !isWindowShowingToday;
+
+  // A setinha some so quando nao ha mais nada: nem secao carregada, nem dia adiante.
+  const canShowMoreSections = agendaViewMode === 'lista'
+    && (allSections.length > sections.length || loadMoreState !== 'exhausted');
+
+  const canCollapseSections = agendaViewMode === 'lista'
+    && visibleSectionLimit > AGENDA_VISIBLE_SECTIONS;
+
+  // A legenda tem que descrever o que esta na tela, nao a janela carregada.
+  const visibleRangeLabel = useMemo(() => {
+    if (sections.length === 0) {
+      return formatShortDate(selectedDate);
+    }
+
+    const first = formatShortDate(sections[0].date);
+    const last = formatShortDate(sections[sections.length - 1].date);
+    return first === last ? first : `${first} a ${last}`;
+  }, [sections, selectedDate]);
 
   const loadClientAvailability = async () => {
     try {
@@ -550,15 +512,32 @@ const AgendaScreen = () => {
     setServices(servicesResponse.data || []);
   };
 
-  const loadAgendaForDate = async (date, { isRefresh = false } = {}) => {
+  const applyWindowRange = (start, end) => {
+    windowRangeRef.current = { start, end };
+    setAgendaWindow({ start, end });
+  };
+
+  // Recarrega a janela inteira ancorada em uma data. Usado no bootstrap, no
+  // refresh e quando o seletor pede um dia longe do que esta carregado.
+  const loadAgendaWindow = async (anchorDate, { isRefresh = false, keepRange = false } = {}) => {
     if (!isRefresh) {
       setLoading(true);
     }
 
     try {
-      const { from, to } = buildDayUtcRange(date);
-      const data = await listAppointments({ from, to });
+      const range = keepRange
+        ? {
+          start: windowRangeRef.current.start,
+          end: windowRangeRef.current.end,
+          from: windowRangeRef.current.start.toISOString(),
+          to: windowRangeRef.current.end.toISOString(),
+        }
+        : buildAgendaWindow(anchorDate);
+
+      const data = await listAppointments({ from: range.from, to: range.to });
+      applyWindowRange(range.start, range.end);
       setAppointments(sortAppointments(data));
+      setLoadMoreState('idle');
     } catch (error) {
       console.error('Erro ao carregar agenda:', error.response?.data || error.message);
       if (!isSessionExpiredError(error)) {
@@ -569,6 +548,77 @@ const AgendaScreen = () => {
       setRefreshing(false);
     }
   };
+
+  const getMaxAgendaEnd = () => endOfLocalDay(
+    addLocalDays(todayRef.current, AGENDA_MAX_LOOKAHEAD_DAYS),
+  );
+
+  // Anexa blocos contiguos ate cobrir `desiredEnd`, sem recarregar o que ja veio.
+  const extendAgendaWindowTo = async (desiredEnd) => {
+    const maxEnd = getMaxAgendaEnd();
+    const limit = desiredEnd.getTime() > maxEnd.getTime() ? maxEnd : desiredEnd;
+
+    if (windowRangeRef.current.end.getTime() >= limit.getTime()) {
+      setLoadMoreState(
+        windowRangeRef.current.end.getTime() >= maxEnd.getTime() ? 'exhausted' : 'idle',
+      );
+      return;
+    }
+
+    setLoadMoreState('loading');
+
+    try {
+      let cursor = windowRangeRef.current.end;
+
+      while (cursor.getTime() < limit.getTime()) {
+        const block = getNextAgendaWindowBlock(cursor, limit);
+        if (!block) break;
+
+        // eslint-disable-next-line no-await-in-loop
+        const data = await listAppointments({ from: block.from, to: block.to });
+        setAppointments((previous) => sortAppointments(mergeAppointmentsById(previous, data)));
+        applyWindowRange(windowRangeRef.current.start, block.end);
+        cursor = block.end;
+      }
+
+      setLoadMoreState(
+        windowRangeRef.current.end.getTime() >= maxEnd.getTime() ? 'exhausted' : 'idle',
+      );
+    } catch (error) {
+      console.error('Erro ao carregar mais dias:', error.response?.data || error.message);
+      setLoadMoreState('error');
+    }
+  };
+
+  const extendAgendaWindow = () => extendAgendaWindowTo(
+    endOfLocalDay(addLocalDays(windowRangeRef.current.end, AGENDA_WINDOW_DAYS)),
+  );
+
+  // Garante que a data esteja na janela: estende quando esta logo adiante,
+  // reancora quando esta no passado ou muito longe.
+  const ensureDateVisible = async (date) => {
+    const target = startOfLocalDay(date);
+    const { start, end } = windowRangeRef.current;
+
+    if (isWithinWindow(target, start, end)) {
+      return;
+    }
+
+    const oneBlockAhead = endOfLocalDay(addLocalDays(end, AGENDA_WINDOW_DAYS));
+
+    if (target.getTime() > end.getTime() && target.getTime() <= oneBlockAhead.getTime()) {
+      await extendAgendaWindowTo(endOfLocalDay(addLocalDays(target, AGENDA_WINDOW_DAYS)));
+      return;
+    }
+
+    await loadAgendaWindow(target);
+  };
+
+  const isWithinLoadedWindow = (dateValue) => isWithinWindow(
+    dateValue,
+    windowRangeRef.current.start,
+    windowRangeRef.current.end,
+  );
 
   const loadCalendarMarks = useCallback(async (monthValue, { force = false } = {}) => {
     const normalizedMonth = new Date(
@@ -639,36 +689,78 @@ const AgendaScreen = () => {
     loadCalendarMarks(nextMonth);
   };
 
+  // Escolher uma data no calendario filtra a agenda naquele dia, e so nele.
+  const handlePickDate = async (pickedDate) => {
+    setShowDayPicker(false);
+    const target = startOfLocalDay(pickedDate);
+    closeAppointmentActions();
+    animateNextLayout();
+    setSelectedDate(target);
+    setVisibleCalendarMonth(new Date(target.getFullYear(), target.getMonth(), 1));
+    setAgendaViewMode('dia');
+    await ensureDateVisible(target);
+  };
+
+  const handleBackToToday = async () => {
+    const today = todayRef.current;
+    closeAppointmentActions();
+    animateNextLayout();
+    setSelectedDate(today);
+    setVisibleCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setAgendaViewMode('lista');
+    setVisibleSectionLimit(AGENDA_VISIBLE_SECTIONS);
+
+    if (!isWithinLoadedWindow(today)) {
+      await loadAgendaWindow(today);
+    }
+  };
+
+  const handleShowMoreSections = () => {
+    animateNextLayout();
+    const nextLimit = visibleSectionLimit + AGENDA_SECTIONS_STEP;
+    setVisibleSectionLimit(nextLimit);
+
+    // Acabaram os dias ja carregados: busca o proximo bloco antes que ela chegue nele.
+    if (nextLimit >= allSections.length && loadMoreState === 'idle') {
+      extendAgendaWindow();
+    }
+  };
+
+  const handleCollapseSections = () => {
+    animateNextLayout();
+    closeAppointmentActions();
+    setVisibleSectionLimit(AGENDA_VISIBLE_SECTIONS);
+  };
+
+  // Depois de salvar, so mexe na view se o dia salvo nao estiver a vista.
+  // Assim criar para hoje nao tira amanha da tela, e criar para daqui a 20 dias
+  // ainda mostra o que acabou de ser criado.
+  const revealSavedAppointment = async (startAt) => {
+    if (sections.some((section) => section.key === getLocalDateKey(startAt))) {
+      return;
+    }
+
+    const target = startOfLocalDay(startAt);
+    animateNextLayout();
+    setSelectedDate(target);
+    setVisibleCalendarMonth(new Date(target.getFullYear(), target.getMonth(), 1));
+    setAgendaViewMode('dia');
+    await ensureDateVisible(target);
+  };
+
   useEffect(() => {
     const bootstrap = async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      let initialDate = today;
-
-      try {
-        const { from, to } = buildInitialAgendaUtcRange();
-        const futureAppointments = filterNonCanceledAppointments(
-          await listAppointments({ from, to }),
-        );
-        const nextAppointment = sortAppointments(futureAppointments)[0];
-
-        if (nextAppointment) {
-          initialDate = new Date(nextAppointment.startAt);
-        }
-      } catch (error) {
-        console.error('Erro ao localizar próximo atendimento:', error.response?.data || error.message);
-      }
-
-      const initialMonth = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
-      didBootstrapRef.current = true;
-      skipSelectedDateEffectRef.current = true;
-      setSelectedDate(initialDate);
+      // A agenda sempre abre em hoje: a janela de 30 dias ja traz os proximos
+      // atendimentos, entao nao existe mais o pulo para o proximo dia ocupado.
+      const today = todayRef.current;
+      const initialMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      setSelectedDate(today);
       setVisibleCalendarMonth(initialMonth);
 
       try {
         await Promise.all([
           loadClientsAndServices(),
-          loadAgendaForDate(initialDate),
+          loadAgendaWindow(today),
           loadCalendarMarks(initialMonth),
         ]);
       } catch (error) {
@@ -682,22 +774,6 @@ const AgendaScreen = () => {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (!didBootstrapRef.current) {
-      return;
-    }
-
-    if (skipSelectedDateEffectRef.current) {
-      skipSelectedDateEffectRef.current = false;
-      return;
-    }
-
-    animateNextLayout();
-    closeAppointmentActions();
-    loadAgendaForDate(selectedDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
 
   useEffect(() => {
     if (!modalVisible) {
@@ -725,22 +801,12 @@ const AgendaScreen = () => {
 
     const percent = form.depositPercent ?? DEFAULT_DEPOSIT_PERCENT;
     const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
-    const nextDepositAmountInput = formatCurrencyInput(nextDepositAmount);
 
-    setForm((prev) => {
-      if (
-        isSameCurrencyAmount(prev.depositAmount, nextDepositAmount)
-        && prev.depositAmountInput === nextDepositAmountInput
-      ) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        depositAmount: nextDepositAmount,
-        depositAmountInput: nextDepositAmountInput,
-      };
-    });
+    setForm((prev) => (
+      isSameCurrencyAmount(prev.depositAmount, nextDepositAmount)
+        ? prev
+        : { ...prev, depositAmount: nextDepositAmount }
+    ));
   }, [form.depositMode, form.depositPercent, modalVisible, selectedServicesTotal.price]);
 
   const onRefresh = async () => {
@@ -748,7 +814,7 @@ const AgendaScreen = () => {
     try {
       await Promise.all([
         loadClientsAndServices(),
-        loadAgendaForDate(selectedDate, { isRefresh: true }),
+        loadAgendaWindow(selectedDate, { isRefresh: true, keepRange: true }),
         loadCalendarMarks(visibleCalendarMonth, { force: true }),
       ]);
     } catch (error) {
@@ -787,10 +853,10 @@ const AgendaScreen = () => {
       startAt: defaultStartAt,
       depositPercent: DEFAULT_DEPOSIT_PERCENT,
       depositAmount: 0,
-      depositAmountInput: formatCurrencyInput(0),
       depositMode: 'percent',
       notes: '',
     });
+    setDepositSyncToken((token) => token + 1);
 
     setModalVisible(true);
   };
@@ -804,7 +870,11 @@ const AgendaScreen = () => {
     setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
     const appointmentDepositAmount = roundCurrency(Number(appointment.depositAmount || 0));
-    const appointmentDepositPercent = inferDepositPercent(appointmentDepositAmount, appointment.price);
+    const appointmentDepositPercent = inferDepositPercent(
+      appointmentDepositAmount,
+      appointment.price,
+      DEPOSIT_PERCENT_OPTIONS,
+    );
     const appointmentClient = {
       id: appointment.clientId,
       name: appointment.clientName || 'Cliente',
@@ -820,10 +890,10 @@ const AgendaScreen = () => {
       startAt: new Date(appointment.startAt),
       depositPercent: appointmentDepositPercent,
       depositAmount: appointmentDepositAmount,
-      depositAmountInput: formatCurrencyInput(appointmentDepositAmount),
       depositMode: appointmentDepositPercent === null ? 'manual' : 'percent',
       notes: appointment.notes || '',
     });
+    setDepositSyncToken((token) => token + 1);
 
     setModalVisible(true);
   };
@@ -907,41 +977,30 @@ const AgendaScreen = () => {
   ]);
 
   const handleDepositPercentPress = (percent) => {
-    const nextDepositAmount = calculateDepositAmount(selectedServicesTotal.price, percent);
-
     setForm((prev) => ({
       ...prev,
       depositPercent: percent,
-      depositAmount: nextDepositAmount,
-      depositAmountInput: formatCurrencyInput(nextDepositAmount),
+      depositAmount: calculateDepositAmount(selectedServicesTotal.price, percent),
       depositMode: 'percent',
     }));
+    setDepositSyncToken((token) => token + 1);
   };
 
-  const handleDepositAmountChange = (value) => {
-    const sanitizedValue = sanitizeCurrencyInput(value);
-    const parsedDepositAmount = parseCurrencyInput(sanitizedValue);
-
+  // O texto e a posicao do cursor ficam com o useCurrencyInput; aqui so entra o numero.
+  const handleDepositAmountChange = useCallback((amount) => {
     setForm((prev) => ({
       ...prev,
       depositPercent: null,
-      depositAmount: parsedDepositAmount ?? 0,
-      depositAmountInput: sanitizedValue,
+      depositAmount: amount,
       depositMode: 'manual',
     }));
-  };
+  }, []);
 
-  const handleDepositAmountBlur = () => {
-    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
-    const nextDepositAmount = Math.max(parsedDepositAmount ?? 0, 0);
-
-    setForm((prev) => ({
-      ...prev,
-      depositAmount: nextDepositAmount,
-      depositAmountInput: formatCurrencyInput(nextDepositAmount),
-      depositMode: 'manual',
-    }));
-  };
+  const depositInput = useCurrencyInput({
+    value: form.depositAmount,
+    syncToken: depositSyncToken,
+    onChangeValue: handleDepositAmountChange,
+  });
 
   const hasLocalAppointmentConflict = () => {
     if (!form.startAt || selectedServicesTotal.estimatedTime <= 0) {
@@ -981,10 +1040,9 @@ const AgendaScreen = () => {
       return;
     }
 
-    const parsedDepositAmount = parseCurrencyInput(form.depositAmountInput);
-    const finalDepositAmount = parsedDepositAmount === null ? null : roundCurrency(parsedDepositAmount);
+    const finalDepositAmount = roundCurrency(Number(form.depositAmount || 0));
 
-    if (finalDepositAmount === null || !Number.isFinite(finalDepositAmount) || finalDepositAmount < 0) {
+    if (!Number.isFinite(finalDepositAmount) || finalDepositAmount < 0) {
       Alert.alert('Sinal inválido', 'Informe um valor de sinal válido.');
       return;
     }
@@ -1023,12 +1081,13 @@ const AgendaScreen = () => {
             String(item.id) !== String(editingAppointmentId)
           ));
 
-          return isSameLocalDay(updated.startAt, selectedDate)
+          return isWithinLoadedWindow(updated.startAt)
             ? sortAppointments([...withoutEditedAppointment, updated])
             : sortAppointments(withoutEditedAppointment);
         });
         closeModal();
         refreshCalendarMarksForDates([previousAppointment?.startAt, updated.startAt]);
+        revealSavedAppointment(updated.startAt);
       } catch (error) {
         if (!allowConflict && isAppointmentConflictError(error)) {
           showAppointmentConflictFeedback();
@@ -1045,11 +1104,12 @@ const AgendaScreen = () => {
 
     try {
       const created = await createAppointment(payload);
-      if (isSameLocalDay(created.startAt, selectedDate)) {
+      if (isWithinLoadedWindow(created.startAt)) {
         setAppointments((prev) => sortAppointments([...prev, created]));
       }
       closeModal();
       refreshCalendarMarksForDates([created.startAt]);
+      revealSavedAppointment(created.startAt);
     } catch (error) {
       if (!allowConflict && isAppointmentConflictError(error)) {
         showAppointmentConflictFeedback();
@@ -1226,12 +1286,182 @@ const AgendaScreen = () => {
         String(item.id) === String(appointment.id) ? canceledAppointment : item
       ))));
       closeAppointmentActions();
+      // O cancelado continua na lista, entao os detalhes seguem validos: so
+      // encerramos a confirmacao para o modal voltar a mostrar as acoes.
+      setDeleteConfirmationId(null);
       refreshCalendarMarksForDates([appointment.startAt]);
     } catch (error) {
-      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível excluir o atendimento.');
+      Alert.alert('Erro', error.response?.data?.error || 'Não foi possível cancelar o atendimento.');
     } finally {
       setDeletingAppointmentId(null);
     }
+  };
+
+  const openArchiveConfirmation = (appointmentId) => {
+    animateNextLayout();
+    setDeleteConfirmationId(null);
+    setArchiveConfirmationId(appointmentId);
+  };
+
+  const closeArchiveConfirmation = () => {
+    animateNextLayout();
+    setArchiveConfirmationId(null);
+  };
+
+  // Some com o atendimento de vez. A API so aceita cancelados e passa a excluir
+  // arquivados das listagens, entao ele nao volta nem apos recarregar.
+  const handleArchiveAppointment = async (appointment) => {
+    if (archivingAppointmentId !== null) {
+      return;
+    }
+
+    setArchivingAppointmentId(appointment.id);
+    animateNextLayout();
+    setAppointments((prev) => prev.filter((item) => String(item.id) !== String(appointment.id)));
+    closeAppointmentActions();
+    // Apagado some da lista, entao o modal de detalhes nao tem mais o que mostrar.
+    closeAppointmentDetails();
+
+    try {
+      await archiveAppointment(appointment.id);
+      // Sem refreshCalendarMarksForDates: cancelado nunca entrou nos marcadores.
+    } catch (error) {
+      animateNextLayout();
+      setAppointments((prev) => (
+        prev.some((item) => String(item.id) === String(appointment.id))
+          ? prev
+          : sortAppointments([...prev, appointment])
+      ));
+      Alert.alert('Erro', getAppointmentErrorMessage(error, 'Não foi possível apagar o atendimento.'));
+    } finally {
+      setArchivingAppointmentId(null);
+    }
+  };
+
+  const openAppointmentDetails = (appointment) => {
+    closeAppointmentActions();
+    animateNextLayout();
+    setDetailsAppointmentId(appointment.id);
+  };
+
+  const closeAppointmentDetails = useCallback(() => {
+    animateNextLayout();
+    setDetailsAppointmentId(null);
+    setDeleteConfirmationId(null);
+    setArchiveConfirmationId(null);
+  }, [animateNextLayout]);
+
+  // Um so despachante para as duas entradas (popover e modal de detalhes),
+  // garantindo que a mesma acao se comporte igual venha de onde vier.
+  const runAppointmentAction = (actionKey, appointment, { fromDetails = false } = {}) => {
+    switch (actionKey) {
+      case 'edit':
+        if (fromDetails) closeAppointmentDetails();
+        openEditModal(appointment);
+        break;
+      // Trocar status nao fecha os detalhes: o modal le do `appointments`, entao
+      // o badge e a lista de acoes se atualizam na hora e da para desfazer ali mesmo.
+      case 'complete':
+        handleStatusChange(appointment.id, 'completed');
+        break;
+      case 'reschedule':
+      case 'restore':
+        handleStatusChange(appointment.id, 'scheduled');
+        break;
+      // Cancelar e apagar pedem confirmacao. Ela e renderizada no mesmo lugar de
+      // onde a acao partiu, entao aqui so marcamos qual confirmacao esta ativa.
+      case 'cancel':
+        openDeleteConfirmation(appointment.id);
+        break;
+      case 'archive':
+        openArchiveConfirmation(appointment.id);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Usado pelo popover e pelo modal de detalhes, a partir da mesma lista.
+  const renderAppointmentActionList = (appointment, { fromDetails = false } = {}) => (
+    getAppointmentActions(appointment.status).map((action) => (
+      <TouchableOpacity
+        key={action.key}
+        style={styles.actionMenuItem}
+        onPress={() => runAppointmentAction(action.key, appointment, { fromDetails })}
+        accessibilityRole="button"
+        accessibilityLabel={action.label}
+      >
+        <Ionicons name={action.icon} size={18} color={ACTION_TONE_COLORS[action.tone]} />
+        <Text style={[
+          styles.actionMenuText,
+          action.tone === 'destructive' && styles.destructiveActionText,
+        ]}>
+          {action.label}
+        </Text>
+      </TouchableOpacity>
+    ))
+  );
+
+  const renderCancelConfirmation = (appointment) => {
+    const isDeleting = String(deletingAppointmentId) === String(appointment.id);
+
+    return (
+      <View style={styles.deleteConfirmation}>
+        <Text style={styles.deleteConfirmationTitle}>Cancelar atendimento?</Text>
+        <Text style={styles.deleteConfirmationText}>
+          Ele fica cancelado, sem ocupar o horário, e pode ser restaurado ou apagado depois.
+        </Text>
+        <View style={styles.deleteConfirmationActions}>
+          <TouchableOpacity
+            style={styles.deleteConfirmationSecondaryButton}
+            onPress={closeDeleteConfirmation}
+            disabled={isDeleting}
+          >
+            <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
+            onPress={() => handleDeleteAppointment(appointment)}
+            disabled={isDeleting}
+          >
+            <Text style={styles.deleteConfirmationButtonText}>
+              {isDeleting ? 'Cancelando...' : 'Cancelar atendimento'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderArchiveConfirmation = (appointment) => {
+    const isArchiving = String(archivingAppointmentId) === String(appointment.id);
+
+    return (
+      <View style={styles.deleteConfirmation}>
+        <Text style={styles.deleteConfirmationTitle}>Apagar da agenda?</Text>
+        <Text style={styles.deleteConfirmationText}>
+          Ele some da agenda para sempre e não poderá ser restaurado pelo app.
+        </Text>
+        <View style={styles.deleteConfirmationActions}>
+          <TouchableOpacity
+            style={styles.deleteConfirmationSecondaryButton}
+            onPress={closeArchiveConfirmation}
+            disabled={isArchiving}
+          >
+            <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteConfirmationButton, isArchiving && styles.disabledButton]}
+            onPress={() => handleArchiveAppointment(appointment)}
+            disabled={isArchiving}
+          >
+            <Text style={styles.deleteConfirmationButtonText}>
+              {isArchiving ? 'Apagando...' : 'Apagar da agenda'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   };
 
   const renderAppointmentActionsPopover = () => {
@@ -1244,7 +1474,7 @@ const AgendaScreen = () => {
     }
 
     const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
-    const isDeleting = String(deletingAppointmentId) === String(appointment.id);
+    const isConfirmingArchive = String(archiveConfirmationId) === String(appointment.id);
     const opensBelow = actionPopoverPosition.placement === 'below';
     const animatedPopoverStyle = {
       opacity: actionMenuAnimation,
@@ -1292,71 +1522,151 @@ const AgendaScreen = () => {
             animatedPopoverStyle,
           ]}
         >
-          {appointment.status === 'canceled' ? (
-            <TouchableOpacity
-              style={styles.actionMenuItem}
-              onPress={() => handleStatusChange(appointment.id, 'scheduled')}
-            >
-              <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
-              <Text style={styles.actionMenuText}>Restaurar atendimento</Text>
-            </TouchableOpacity>
-          ) : !isConfirmingDelete ? (
-            <>
-              <TouchableOpacity style={styles.actionMenuItem} onPress={() => openEditModal(appointment)}>
-                <Ionicons name="create-outline" size={18} color={colors.primary} />
-                <Text style={styles.actionMenuText}>Editar agendamento</Text>
-              </TouchableOpacity>
-              {appointment.status === 'scheduled' && (
-                <TouchableOpacity
-                  style={styles.actionMenuItem}
-                  onPress={() => handleStatusChange(appointment.id, 'completed')}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
-                  <Text style={styles.actionMenuText}>Atendimento concluído</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={styles.actionMenuItem}
-                onPress={() => openDeleteConfirmation(appointment.id)}
-              >
-                <Ionicons name="trash-outline" size={18} color={colors.error} />
-                <Text style={[styles.actionMenuText, styles.destructiveActionText]}>
-                  Excluir atendimento
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <View style={styles.deleteConfirmation}>
-              <Text style={styles.deleteConfirmationTitle}>Excluir atendimento?</Text>
-              <Text style={styles.deleteConfirmationText}>
-                Ele ficará cancelado, sem ocupar o horário, e poderá ser restaurado depois.
-              </Text>
-              <View style={styles.deleteConfirmationActions}>
-                <TouchableOpacity
-                  style={styles.deleteConfirmationSecondaryButton}
-                  onPress={closeDeleteConfirmation}
-                  disabled={isDeleting}
-                >
-                  <Text style={styles.deleteConfirmationSecondaryText}>Manter</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.deleteConfirmationButton, isDeleting && styles.disabledButton]}
-                  onPress={() => handleDeleteAppointment(appointment)}
-                  disabled={isDeleting}
-                >
-                  <Text style={styles.deleteConfirmationButtonText}>
-                    {isDeleting ? 'Excluindo...' : 'Excluir atendimento'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          {isConfirmingArchive
+            ? renderArchiveConfirmation(appointment)
+            : isConfirmingDelete
+              ? renderCancelConfirmation(appointment)
+              : renderAppointmentActionList(appointment)}
         </Animated.View>
       </View>
     );
   };
 
+  // Camada inline, nunca `Modal` nativo: empilhar modais quebrou a Agenda no iOS
+  // antes (#81) e essa tela ja segue esse padrao no formulario.
+  const renderAppointmentDetails = () => {
+    const appointment = detailsAppointment;
+
+    if (!appointment) {
+      return null;
+    }
+
+    const isConfirmingDelete = String(deleteConfirmationId) === String(appointment.id);
+    const isConfirmingArchive = String(archiveConfirmationId) === String(appointment.id);
+    const total = roundCurrency(Number(appointment.price || 0));
+    const deposit = roundCurrency(Number(appointment.depositAmount || 0));
+    const remaining = calculateRemainingAmount(total, deposit);
+
+    return (
+      <View style={styles.detailsOverlay} accessibilityViewIsModal>
+        <TouchableOpacity
+          style={styles.detailsBackdrop}
+          activeOpacity={1}
+          onPress={closeAppointmentDetails}
+          accessibilityRole="button"
+          accessibilityLabel="Fechar detalhes do atendimento"
+        />
+        <View style={[styles.detailsCard, { paddingBottom: 14 + bottomInset }]}>
+          <View style={styles.detailsHandle} />
+
+          <View style={styles.detailsHeader}>
+            <View style={styles.detailsHeaderMain}>
+              <Text style={styles.detailsTitle} numberOfLines={2}>
+                {appointment.clientName || 'Cliente'}
+              </Text>
+              <Text style={styles.detailsSubtitle} numberOfLines={3}>
+                {getAppointmentServiceName(appointment) || 'Serviço'}
+              </Text>
+            </View>
+            <View style={[
+              styles.statusBadge,
+              { backgroundColor: statusColors[appointment.status] || colors.darkGray },
+            ]}>
+              <Text style={styles.statusBadgeText}>
+                {statusLabels[appointment.status] || appointment.status}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.detailsWhen}>
+            <Ionicons name="calendar-outline" size={16} color={colors.darkGray} />
+            <Text style={styles.detailsWhenText}>
+              {formatSectionDate(new Date(appointment.startAt))}
+              {'  ·  '}
+              {formatTime(appointment.startAt)} - {formatTime(appointment.endAt)}
+            </Text>
+          </View>
+
+          <View style={styles.detailsMoneyRow}>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Valor total</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(total)}</Text>
+            </View>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Sinal</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(deposit)}</Text>
+            </View>
+            <View style={styles.detailsMoneyItem}>
+              <Text style={styles.detailsMoneyLabel}>Falta pagar</Text>
+              <Text style={styles.detailsMoneyValue}>{formatCurrency(remaining)}</Text>
+            </View>
+          </View>
+
+          {Boolean(appointment.notes) && (
+            <View style={styles.detailsNotes}>
+              <Text style={styles.detailsNotesLabel}>Observações</Text>
+              <Text style={styles.detailsNotesText}>{appointment.notes}</Text>
+            </View>
+          )}
+
+          {Boolean(appointment.googleSyncStatus) && (
+            <View style={styles.detailsGoogleRow}>
+              <GoogleSyncBadge status={appointment.googleSyncStatus} reduceMotion />
+              <Text style={styles.detailsGoogleText}>
+                {googleSyncDetailLabels[appointment.googleSyncStatus] || ''}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.detailsActions}>
+            {isConfirmingArchive
+              ? renderArchiveConfirmation(appointment)
+              : isConfirmingDelete
+                ? renderCancelConfirmation(appointment)
+                : renderAppointmentActionList(appointment, { fromDetails: true })}
+          </View>
+
+          {!isConfirmingDelete && !isConfirmingArchive && (
+            <TouchableOpacity
+              style={styles.detailsCloseButton}
+              onPress={closeAppointmentDetails}
+              accessibilityRole="button"
+            >
+              <Text style={styles.detailsCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderTitleRow}>
+        {section.relativeLabel && (
+          <View style={styles.sectionBadge}>
+            <Text style={styles.sectionBadgeText}>{section.relativeLabel}</Text>
+          </View>
+        )}
+        <Text style={styles.sectionTitle} numberOfLines={1}>
+          {formatSectionDate(section.date)}
+        </Text>
+      </View>
+      <Text style={styles.sectionMeta}>
+        {section.activeCount === 1 ? '1 atendimento' : `${section.activeCount} atendimentos`}
+      </Text>
+    </View>
+  );
+
   const renderAppointmentItem = ({ item }) => {
+    if (isDayPlaceholder(item)) {
+      return (
+        <View style={styles.emptyDayRow}>
+          <Text style={styles.emptyDayText}>Nenhum atendimento</Text>
+        </View>
+      );
+    }
+
     const isExpanded = String(expandedAppointmentId) === String(item.id);
     const isAnimatingStatus = String(statusAnimationAppointmentId) === String(item.id);
     const isCanceled = isCanceledAppointment(item);
@@ -1378,6 +1688,12 @@ const AgendaScreen = () => {
     } : undefined;
 
     return (
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => openAppointmentDetails(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Detalhes do atendimento de ${item.clientName || 'cliente'} às ${formatTime(item.startAt)}`}
+      >
       <Animated.View style={[
         styles.card,
         isCanceled && styles.canceledCard,
@@ -1434,37 +1750,21 @@ const AgendaScreen = () => {
               {getAppointmentServiceName(item) || 'Serviço'}
             </Text>
           </View>
-          {googleSyncLabels[item.googleSyncStatus] && (
-            <View style={[
-              styles.googleSyncBadge,
-              { borderColor: googleSyncColors[item.googleSyncStatus] || colors.border },
-            ]}>
-              <Ionicons
-                name={item.googleSyncStatus === 'failed' ? 'cloud-offline-outline' : 'cloud-done-outline'}
-                size={13}
-                color={googleSyncColors[item.googleSyncStatus] || colors.darkGray}
-              />
-              <Text
-                numberOfLines={2}
-                style={[
-                  styles.googleSyncBadgeText,
-                  { color: googleSyncColors[item.googleSyncStatus] || colors.darkGray },
-                ]}
-              >
-                {googleSyncLabels[item.googleSyncStatus]}
-              </Text>
-            </View>
-          )}
+          <GoogleSyncBadge
+            status={item.googleSyncStatus}
+            reduceMotion={reduceMotionEnabled}
+          />
         </View>
 
       </Animated.View>
+      </TouchableOpacity>
     );
   };
 
   const renderEmptyAgenda = () => (
     <View style={styles.emptyState}>
       <Ionicons name="calendar-clear-outline" size={64} color={colors.lightGray} />
-      <Text style={styles.emptyTitle}>Nenhum agendamento neste dia</Text>
+      <Text style={styles.emptyTitle}>Nenhum agendamento no período</Text>
       <Text style={styles.emptySubtitle}>Crie seu primeiro agendamento em poucos toques.</Text>
 
       {!canSchedule && (
@@ -1482,6 +1782,48 @@ const AgendaScreen = () => {
             <Text style={styles.emptyActionText}>Cadastrar Serviço</Text>
           </TouchableOpacity>
         </View>
+      )}
+    </View>
+  );
+
+  const renderAgendaFooter = () => (
+    <View>
+      {isAgendaEmpty && renderEmptyAgenda()}
+
+      {loadMoreState !== 'loading' && (canShowMoreSections || canCollapseSections) && (
+        <View style={styles.sectionToggleRow}>
+          {canCollapseSections && (
+            <TouchableOpacity
+              style={styles.sectionToggleButton}
+              hitSlop={{ top: 10, right: 16, bottom: 10, left: 16 }}
+              onPress={handleCollapseSections}
+              accessibilityRole="button"
+              accessibilityLabel="Recolher a lista de agendamentos"
+            >
+              <Ionicons name="chevron-up" size={18} color={colors.darkGray} />
+            </TouchableOpacity>
+          )}
+          {canShowMoreSections && (
+            <TouchableOpacity
+              style={styles.sectionToggleButton}
+              hitSlop={{ top: 10, right: 16, bottom: 10, left: 16 }}
+              onPress={handleShowMoreSections}
+              accessibilityRole="button"
+              accessibilityLabel="Exibir mais agendamentos"
+            >
+              <Ionicons name="chevron-down" size={18} color={colors.darkGray} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {loadMoreState === 'loading' && (
+        <Text style={styles.footerText}>Carregando mais dias...</Text>
+      )}
+      {loadMoreState === 'error' && (
+        <TouchableOpacity style={styles.footerButton} onPress={extendAgendaWindow}>
+          <Text style={styles.footerButtonText}>Não deu para carregar. Tentar novamente</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -1552,13 +1894,20 @@ const AgendaScreen = () => {
   }
 
   return (
-    <View ref={screenRef} style={styles.container}>
+    <View ref={screenRef} style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Agenda</Text>
-        <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
-          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          <Text style={styles.dayButtonText}>{formatDateLabel(selectedDate)}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {showTodayButton && (
+            <TouchableOpacity style={styles.todayButton} onPress={handleBackToToday}>
+              <Text style={styles.todayButtonText}>Hoje</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.dayButton} onPress={openDayPicker}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            <Text style={styles.dayButtonText}>{formatDateLabel(selectedDate)}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <DateTimePickerModal
@@ -1571,46 +1920,57 @@ const AgendaScreen = () => {
         markedDates={markedDates}
         onVisibleMonthChange={handleVisibleMonthChange}
         onCancel={() => setShowDayPicker(false)}
-        onConfirm={(pickedDate) => {
-          setShowDayPicker(false);
-          setVisibleCalendarMonth(new Date(pickedDate.getFullYear(), pickedDate.getMonth(), 1));
-          setSelectedDate(pickedDate);
-        }}
+        onConfirm={handlePickDate}
       />
 
       <View style={styles.summaryCard}>
-        <View>
-          <Text style={styles.summaryLabel}>Atendimentos</Text>
-          <Text style={styles.summaryValue}>{activeAppointments.length}</Text>
+        <View style={styles.summaryRow}>
+          <View>
+            <Text style={styles.summaryLabel}>Atendimentos</Text>
+            <Text style={styles.summaryValue}>{windowSummary.appointments}</Text>
+          </View>
+          <View>
+            <Text style={styles.summaryLabel}>Previsto</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(windowSummary.forecast)}</Text>
+          </View>
+          {agendaViewMode === 'lista' && (
+            <View>
+              <Text style={styles.summaryLabel}>Dias ocupados</Text>
+              <Text style={styles.summaryValue}>{windowSummary.busyDays}</Text>
+            </View>
+          )}
         </View>
-        <View>
-          <Text style={styles.summaryLabel}>Previsto</Text>
-          <Text style={styles.summaryValue}>{formatCurrency(totalForecast)}</Text>
-        </View>
-        <View>
-          <Text style={styles.summaryLabel}>Livres</Text>
-          <Text style={styles.summaryValue}>{freeSlotsCount}</Text>
-        </View>
+        <Text style={styles.summaryPeriod}>{visibleRangeLabel}</Text>
       </View>
 
-      <FlatList
+      <SectionList
         style={styles.list}
-        data={appointments}
-        keyExtractor={(item) => String(item.id)}
+        sections={listSections}
+        keyExtractor={(item) => (
+          isDayPlaceholder(item) ? `empty-${item.dateKey}` : String(item.id)
+        )}
         renderItem={renderAppointmentItem}
-        ListEmptyComponent={renderEmptyAgenda}
+        renderSectionHeader={renderSectionHeader}
+        stickySectionHeadersEnabled
+        extraData={`${expandedAppointmentId}-${statusAnimationAppointmentId}`}
         contentContainerStyle={[
           styles.listContainer,
-          appointments.length === 0 && styles.emptyListContainer,
           { paddingBottom: 96 + bottomInset },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        onScrollBeginDrag={closeAppointmentActions}
+        ListFooterComponent={renderAgendaFooter}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={10}
         alwaysBounceVertical
       />
 
       <TouchableOpacity style={[styles.fab, { bottom: 16 + bottomInset }]} onPress={openCreateModal}>
         <Ionicons name="add" size={28} color={colors.white} />
       </TouchableOpacity>
+
+      {renderAppointmentDetails()}
 
       {renderAppointmentActionsPopover()}
 
@@ -1752,11 +2112,13 @@ const AgendaScreen = () => {
                   <Text style={styles.depositInputPrefix}>R$</Text>
                   <TextInput
                     style={styles.depositInput}
-                    value={form.depositAmountInput}
-                    onChangeText={handleDepositAmountChange}
-                    onBlur={handleDepositAmountBlur}
+                    {...depositInput}
                     keyboardType="decimal-pad"
                     placeholder="0,00"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="no"
+                    accessibilityLabel="Valor do sinal em reais"
                   />
                 </View>
                 <View style={styles.depositSummaryGrid}>
@@ -1851,7 +2213,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 56,
     paddingHorizontal: 16,
   },
   loadingContainer: {
@@ -1875,6 +2236,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.text,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  todayButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  todayButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   dayButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1885,12 +2264,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 6,
-    maxWidth: '70%',
+    flexShrink: 1,
   },
   dayButtonText: {
     color: colors.text,
     textTransform: 'capitalize',
     fontSize: 13,
+    flexShrink: 1,
   },
   summaryCard: {
     backgroundColor: colors.white,
@@ -1898,9 +2278,103 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
+    marginBottom: 14,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+  },
+  summaryPeriod: {
+    marginTop: 10,
+    color: colors.darkGray,
+    fontSize: 11,
+  },
+  sectionHeader: {
+    // Precisa ser opaco: o cabecalho fica grudado no topo enquanto a lista rola.
+    backgroundColor: colors.background,
+    paddingTop: 6,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sectionHeaderTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  sectionBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sectionBadgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  sectionTitle: {
+    flexShrink: 1,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  sectionMeta: {
+    color: colors.darkGray,
+    fontSize: 11,
+    flexShrink: 0,
+  },
+  emptyDayRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 11,
+    marginBottom: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    backgroundColor: colors.inputBackground,
+  },
+  emptyDayText: {
+    color: colors.darkGray,
+    fontSize: 13,
+  },
+  // Deliberadamente discretas: so as setinhas, sem borda, fundo ou texto.
+  sectionToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+  },
+  sectionToggleButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    opacity: 0.65,
+  },
+  footerText: {
+    marginTop: 8,
+    textAlign: 'center',
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  footerButton: {
+    marginTop: 8,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  footerButtonText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   summaryLabel: {
     color: colors.darkGray,
@@ -1917,9 +2391,6 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  emptyListContainer: {
-    flexGrow: 1,
   },
   card: {
     backgroundColor: colors.white,
@@ -1996,20 +2467,133 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  googleSyncBadge: {
-    maxWidth: '44%',
-    flexShrink: 1,
-    borderWidth: 1,
+  detailsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    zIndex: 16,
+    elevation: 16,
+  },
+  detailsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  detailsCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 18,
+  },
+  detailsHandle: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
     borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    backgroundColor: colors.border,
+    marginBottom: 14,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  detailsHeaderMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  detailsTitle: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  detailsSubtitle: {
+    marginTop: 3,
+    color: colors.darkGray,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  detailsWhen: {
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 7,
   },
-  googleSyncBadgeText: {
+  detailsWhenText: {
     flexShrink: 1,
+    color: colors.text,
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+  detailsMoneyRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: colors.inputBackground,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  detailsMoneyItem: {
+    flexShrink: 1,
+  },
+  detailsMoneyLabel: {
+    color: colors.darkGray,
     fontSize: 11,
+    marginBottom: 3,
+  },
+  detailsMoneyValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  detailsNotes: {
+    marginTop: 14,
+  },
+  detailsNotesLabel: {
+    color: colors.darkGray,
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  detailsNotesText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  detailsGoogleRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailsGoogleText: {
+    flexShrink: 1,
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  detailsActions: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 6,
+  },
+  detailsCloseButton: {
+    marginTop: 10,
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+  },
+  detailsCloseText: {
+    color: colors.text,
+    fontSize: 14,
     fontWeight: '700',
   },
   actionPopoverOverlay: {

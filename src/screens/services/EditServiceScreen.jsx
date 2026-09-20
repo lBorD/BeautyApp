@@ -6,9 +6,11 @@ import Button from '../../components/button';
 import FeedbackModal from '../../components/FeedbackModal';
 import { updateService } from '../../services/private/serviceAPI';
 import colors from '../../constants/colors';
+import useScreenTopPadding from '../../hooks/useScreenTopPadding';
 import useFeedbackModal from '../../hooks/useFeedbackModal';
 
 export default function EditServiceScreen() {
+  const topPadding = useScreenTopPadding();
   const navigation = useNavigation();
   const route = useRoute();
   const { service } = route.params;
@@ -160,7 +162,7 @@ export default function EditServiceScreen() {
 
   return (
     <>
-      <ScrollView style={styles.container}>
+      <ScrollView style={[styles.container, { paddingTop: topPadding }]}>
         <View style={styles.formContainer}>
           <Text style={styles.title}>Editar Serviço</Text>
 
@@ -239,7 +241,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 50,
   },
   formContainer: {
     padding: 20,
