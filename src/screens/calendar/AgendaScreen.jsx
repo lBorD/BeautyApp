@@ -59,6 +59,7 @@ import {
   summarizeAgendaSections,
 } from './agendaWindow';
 import { getAppointmentActions } from './appointmentActions';
+import { getAppointmentAuthorLines } from './appointmentAuthors';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -1595,6 +1596,7 @@ const AgendaScreen = () => {
     const total = roundCurrency(Number(appointment.price || 0));
     const deposit = roundCurrency(Number(appointment.depositAmount || 0));
     const remaining = calculateRemainingAmount(total, deposit);
+    const authorLines = getAppointmentAuthorLines(appointment);
 
     return (
       <View style={styles.detailsOverlay} accessibilityViewIsModal>
@@ -1664,6 +1666,13 @@ const AgendaScreen = () => {
               <Text style={styles.detailsGoogleText}>
                 {googleSyncDetailLabels[appointment.googleSyncStatus] || ''}
               </Text>
+            </View>
+          )}
+
+          {authorLines.length > 0 && (
+            <View style={styles.detailsAuthorRow}>
+              <Ionicons name="person-outline" size={14} color={colors.darkGray} />
+              <Text style={styles.detailsAuthorText}>{authorLines.join('  ·  ')}</Text>
             </View>
           )}
 
@@ -2642,6 +2651,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailsGoogleText: {
+    flexShrink: 1,
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  detailsAuthorRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailsAuthorText: {
     flexShrink: 1,
     color: colors.darkGray,
     fontSize: 12,
