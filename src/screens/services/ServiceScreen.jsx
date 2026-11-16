@@ -94,7 +94,6 @@ const ServiceScreen = () => {
           onPress: async () => {
             try {
               await deleteService(id);
-              setModalVisible(false);
               fetchServices();
               showFeedback({
                 type: 'success',
@@ -103,6 +102,9 @@ const ServiceScreen = () => {
               });
             } catch (error) {
               console.error('Erro ao excluir serviço:', error);
+              if (isSessionExpiredError(error)) {
+                return;
+              }
               showFeedback({
                 type: 'error',
                 title: 'Erro',
@@ -243,7 +245,15 @@ const ServiceScreen = () => {
                     />
                     <Button
                       title="Excluir"
-                      onPress={() => handleDeleteService(selectedService.id)}
+                      onPress={() => {
+                        // Fecha o modal de acoes antes de confirmar: dois Modal
+                        // nativos empilhados travam a tela no iOS.
+                        const serviceId = selectedService.id;
+                        setModalVisible(false);
+                        setTimeout(() => {
+                          handleDeleteService(serviceId);
+                        }, 300);
+                      }}
                       style={{ backgroundColor: colors.error }}
                     />
                     <Button
