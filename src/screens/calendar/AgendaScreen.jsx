@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from '../../components/DateTimePickerModal';
 import GoogleSyncBadge from './GoogleSyncBadge';
@@ -542,15 +542,19 @@ const AgendaScreen = () => {
     }
   };
 
+  const loadServices = async () => {
+    const response = await api.get('/services/search/active');
+    setServices(response.data || []);
+  };
+
   const loadClientsAndServices = async () => {
-    const [, servicesResponse] = await Promise.all([
+    await Promise.all([
       loadClientAvailability(),
-      api.get('/services/search/active'),
+      loadServices(),
     ]);
 
     setClients([]);
     setSelectedClientOption(null);
-    setServices(servicesResponse.data || []);
   };
 
   const applyWindowRange = (start, end) => {
@@ -815,6 +819,24 @@ const AgendaScreen = () => {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A aba Agenda nao desmonta enquanto ela cadastra, edita ou exclui servicos
+  // em outra tela, entao o catalogo e recarregado sempre que a agenda volta ao
+  // foco. O primeiro foco fica com o bootstrap.
+  const hasFocusedOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      loadServices().catch((error) => {
+        console.error('Erro ao atualizar serviços:', error.response?.data || error.message);
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   useEffect(() => {
     if (!modalVisible) {
