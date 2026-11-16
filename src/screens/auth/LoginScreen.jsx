@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import appPackage from '../../../package.json';
 import api from '../../services/api';
-import { setAuthToken } from '../../services/authStorage';
+import { setAuthToken, setAuthUser } from '../../services/authStorage';
 import Button from '../../components/button';
 import Toggle from '../../components/toggle';
 import colors from '../../constants/colors';
@@ -87,6 +87,7 @@ const LoginScreen = () => {
       if (response.data.success && response.data.token) {
         await saveCredentials();
         await setAuthToken(response.data.token);
+        await setAuthUser(response.data.user || null);
         navigation.replace('Main');
         return;
       }
@@ -94,6 +95,13 @@ const LoginScreen = () => {
       Alert.alert('Login falhou', 'E-mail ou senha incorretos.');
     } catch (error) {
       console.error('Erro ao fazer login:', error);
+
+      // Funcionaria desativada pela dona: a API explica o motivo.
+      if (error.response?.status === 403 && error.response.data?.message) {
+        Alert.alert('Acesso desativado', error.response.data.message);
+        return;
+      }
+
       Alert.alert('Erro', 'Não foi possível fazer login agora. Tente novamente.');
     } finally {
       setIsLoading(false);
