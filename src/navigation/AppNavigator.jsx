@@ -16,8 +16,9 @@ import EditServiceScreen from '../screens/services/EditServiceScreen';
 import ServiceScreen from '../screens/services/ServiceScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import colors from '../constants/colors';
-import { getAuthToken } from '../services/authStorage';
+import { getAuthToken, getAuthUser, isStaffUser } from '../services/authStorage';
 import { setSessionExpiredHandler } from '../services/sessionManager';
+import useSessionUser from '../hooks/useSessionUser';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -31,6 +32,8 @@ const loginResetState = {
 const TabNavigator = () => {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8);
+  // Financeiro e exclusivo da dona da conta.
+  const canSeeFinance = !isStaffUser(useSessionUser());
 
   return (
     <Tab.Navigator
@@ -74,7 +77,7 @@ const TabNavigator = () => {
       <Tab.Screen name="Agenda" component={AgendaScreen} />
       <Tab.Screen name="Clientes" component={ClientesScreen} />
       <Tab.Screen name="Serviços" component={ServiceScreen} />
-      <Tab.Screen name="Financeiro" component={FinancasScreen} />
+      {canSeeFinance && <Tab.Screen name="Financeiro" component={FinancasScreen} />}
       <Tab.Screen name="Configurações" component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -112,6 +115,8 @@ const AppNavigator = () => {
         const token = await getAuthToken();
 
         if (token) {
+          // Carrega o papel antes da primeira tela, para a aba Financeiro nao piscar.
+          await getAuthUser();
           setInitialRouteName('Main');
         }
       } catch (error) {

@@ -34,6 +34,11 @@ import {
   roundCurrency,
 } from '../../utils/currency';
 import {
+  buildServiceSnapshotMap,
+  hasCatalogPriceUpdate,
+  resolveAppointmentServices,
+} from './appointmentPricing';
+import {
   AGENDA_MAX_LOOKAHEAD_DAYS,
   AGENDA_WINDOW_DAYS,
   addLocalDays,
@@ -54,6 +59,7 @@ import {
   summarizeAgendaSections,
 } from './agendaWindow';
 import { getAppointmentActions } from './appointmentActions';
+import { getAppointmentAuthorLines } from './appointmentAuthors';
 import api from '../../services/api';
 import { isSessionExpiredError } from '../../services/sessionManager';
 import {
@@ -249,6 +255,10 @@ const AgendaScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
+  // Preco e duracao congelados do agendamento em edicao, como vieram da API.
+  const [editingServiceSnapshots, setEditingServiceSnapshots] = useState([]);
+  // Só vira true quando a usuaria pede o preco de hoje de proposito.
+  const [refreshPrices, setRefreshPrices] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [startPickerMode, setStartPickerMode] = useState('date');
   const [conflictConfirmationVisible, setConflictConfirmationVisible] = useState(false);
@@ -327,11 +337,21 @@ const AgendaScreen = () => {
     return () => subscription.remove();
   }, [closeAppointmentActions, closeAppointmentDetails, detailsAppointmentId, expandedAppointmentId]);
 
+  const snapshotById = useMemo(
+    () => buildServiceSnapshotMap(editingServiceSnapshots),
+    [editingServiceSnapshots],
+  );
+
+  // Na edicao o snapshot do agendamento vale mais que o catalogo de hoje; ver
+  // appointmentPricing.js.
   const selectedServices = useMemo(
-    () => form.serviceIds
-      .map((serviceId) => services.find((item) => Number(item.id) === Number(serviceId)))
-      .filter(Boolean),
-    [services, form.serviceIds],
+    () => resolveAppointmentServices({
+      serviceIds: form.serviceIds,
+      snapshotById,
+      catalogServices: services,
+      refreshPrices,
+    }),
+    [form.serviceIds, refreshPrices, services, snapshotById],
   );
 
   const searchedServiceOptions = useMemo(() => {
@@ -352,6 +372,27 @@ const AgendaScreen = () => {
   const selectedServicesTotal = useMemo(
     () => calculateServicesTotal(selectedServices),
     [selectedServices],
+  );
+
+  const catalogTotal = useMemo(
+    () => calculateServicesTotal(resolveAppointmentServices({
+      serviceIds: form.serviceIds,
+      snapshotById,
+      catalogServices: services,
+      refreshPrices: true,
+    })),
+    [form.serviceIds, services, snapshotById],
+  );
+
+  // A oferta de atualizar so aparece quando o catalogo divergiu de verdade do
+  // que foi combinado - em agendamento sem reajuste no meio, a linha nem existe.
+  const showCatalogPriceUpdate = useMemo(
+    () => isEditing && hasCatalogPriceUpdate({
+      serviceIds: form.serviceIds,
+      snapshotById,
+      catalogServices: services,
+    }),
+    [form.serviceIds, isEditing, services, snapshotById],
   );
 
   const selectedDepositAmount = useMemo(
@@ -847,6 +888,8 @@ const AgendaScreen = () => {
 
     setIsEditing(false);
     setEditingAppointmentId(null);
+    setEditingServiceSnapshots([]);
+    setRefreshPrices(false);
     setForm({
       clientId: null,
       serviceIds: [],
@@ -866,6 +909,8 @@ const AgendaScreen = () => {
     closeAppointmentActions();
     setIsEditing(true);
     setEditingAppointmentId(appointment.id);
+    setEditingServiceSnapshots(getAppointmentServices(appointment));
+    setRefreshPrices(false);
     setClientSearch('');
     setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
@@ -907,6 +952,8 @@ const AgendaScreen = () => {
     setClientSearch('');
     setServiceSearch('');
     setClientSearchLoading(false);
+    setEditingServiceSnapshots([]);
+    setRefreshPrices(false);
   }, []);
 
   const openStartPicker = (mode) => {
@@ -1064,6 +1111,9 @@ const AgendaScreen = () => {
       depositAmount: finalDepositAmount,
       notes: form.notes,
       ...(allowConflict ? { allowConflict: true } : {}),
+      // Sem a flag a API preserva o preco congelado; ela so vai quando a
+      // usuaria pediu o reajuste na propria tela.
+      ...(isEditing && refreshPrices ? { refreshPrices: true } : {}),
     };
 
     setConflictConfirmationVisible(false);
@@ -1546,6 +1596,7 @@ const AgendaScreen = () => {
     const total = roundCurrency(Number(appointment.price || 0));
     const deposit = roundCurrency(Number(appointment.depositAmount || 0));
     const remaining = calculateRemainingAmount(total, deposit);
+    const authorLines = getAppointmentAuthorLines(appointment);
 
     return (
       <View style={styles.detailsOverlay} accessibilityViewIsModal>
@@ -1615,6 +1666,13 @@ const AgendaScreen = () => {
               <Text style={styles.detailsGoogleText}>
                 {googleSyncDetailLabels[appointment.googleSyncStatus] || ''}
               </Text>
+            </View>
+          )}
+
+          {authorLines.length > 0 && (
+            <View style={styles.detailsAuthorRow}>
+              <Ionicons name="person-outline" size={14} color={colors.darkGray} />
+              <Text style={styles.detailsAuthorText}>{authorLines.join('  ·  ')}</Text>
             </View>
           )}
 
@@ -2083,6 +2141,27 @@ const AgendaScreen = () => {
                 <Text style={styles.selectionSummary}>
                   {selectedServices.length} serviço(s) - {selectedServicesTotal.estimatedTime} min - {formatCurrency(selectedServicesTotal.price)}
                 </Text>
+              )}
+              {showCatalogPriceUpdate && (
+                <View style={styles.priceUpdateRow}>
+                  <Text style={styles.priceUpdateText}>
+                    {refreshPrices
+                      ? `Usando o preço de hoje (${formatCurrency(catalogTotal.price)})`
+                      : `Preço de hoje: ${formatCurrency(catalogTotal.price)}`}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.priceUpdateAction}
+                    onPress={() => setRefreshPrices((previous) => !previous)}
+                    accessibilityRole="button"
+                    accessibilityLabel={refreshPrices
+                      ? 'Manter o preço combinado no agendamento'
+                      : 'Atualizar para o preço de hoje'}
+                  >
+                    <Text style={styles.priceUpdateActionText}>
+                      {refreshPrices ? 'manter o combinado' : 'atualizar'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               <Text style={styles.fieldLabel}>Sinal</Text>
@@ -2576,6 +2655,17 @@ const styles = StyleSheet.create({
     color: colors.darkGray,
     fontSize: 12,
   },
+  detailsAuthorRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailsAuthorText: {
+    flexShrink: 1,
+    color: colors.darkGray,
+    fontSize: 12,
+  },
   detailsActions: {
     marginTop: 16,
     borderTopWidth: 1,
@@ -2810,6 +2900,27 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 12,
     fontWeight: '700',
+  },
+  priceUpdateRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  priceUpdateText: {
+    color: colors.darkGray,
+    fontSize: 12,
+  },
+  priceUpdateAction: {
+    marginLeft: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  priceUpdateActionText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '800',
+    textDecorationLine: 'underline',
   },
   depositCompact: {
     marginBottom: 2,

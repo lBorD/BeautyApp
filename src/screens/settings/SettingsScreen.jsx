@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,12 +14,15 @@ import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../../constants/colors';
 import useScreenTopPadding from '../../hooks/useScreenTopPadding';
+import useSessionUser from '../../hooks/useSessionUser';
+import { isStaffUser } from '../../services/authStorage';
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
   getGoogleCalendarStatus,
 } from '../../services/private/googleCalendarAPI';
 import { logout } from '../../services/sessionManager';
+import TeamSection from './TeamSection';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -31,6 +35,9 @@ const GOOGLE_REDIRECT_URI = 'com.bordd.beautyapp:/oauth/google';
 
 const SettingsScreen = () => {
   const topPadding = useScreenTopPadding();
+  const sessionUser = useSessionUser();
+  // A funcionaria ve o status do Google, mas conectar e gerir a equipe e da dona.
+  const isStaff = isStaffUser(sessionUser);
   const [calendarStatus, setCalendarStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -170,8 +177,21 @@ const SettingsScreen = () => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding }]}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: topPadding }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>Configurações</Text>
+
+      {Boolean(sessionUser?.name) && (
+        <View style={styles.accountRow}>
+          <Ionicons name="person-circle-outline" size={22} color={colors.darkGray} />
+          <Text style={styles.accountText} numberOfLines={1}>
+            Conectada como <Text style={styles.accountName}>{sessionUser.name}</Text>
+          </Text>
+        </View>
+      )}
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
@@ -206,7 +226,11 @@ const SettingsScreen = () => {
           )}
         </View>
 
-        {!isConnected ? (
+        {isStaff ? (
+          <Text style={styles.helperText}>
+            Seus agendamentos vão para o Google Agenda da responsável pela conta. Só ela conecta ou desconecta.
+          </Text>
+        ) : !isConnected ? (
           <TouchableOpacity
             style={[
               styles.primaryButton,
@@ -232,10 +256,12 @@ const SettingsScreen = () => {
         )}
       </View>
 
+      {!isStaff && <TeamSection />}
+
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutButtonText}>Logout</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -243,13 +269,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  content: {
     paddingHorizontal: 20,
+    paddingBottom: 32,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: colors.text,
     marginBottom: 20,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  accountText: {
+    flexShrink: 1,
+    color: colors.darkGray,
+    fontSize: 14,
+  },
+  accountName: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  helperText: {
+    marginTop: 14,
+    color: colors.darkGray,
+    fontSize: 13,
+    lineHeight: 18,
   },
   section: {
     backgroundColor: colors.white,
