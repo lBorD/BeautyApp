@@ -39,6 +39,14 @@ import {
   resolveAppointmentServices,
 } from './appointmentPricing';
 import {
+  DURATION_STEPS,
+  calculateEndAt,
+  formatDurationStep,
+  getEffectiveDuration,
+  getInitialCustomDuration,
+  stepDuration,
+} from './appointmentDuration';
+import {
   AGENDA_MAX_LOOKAHEAD_DAYS,
   AGENDA_WINDOW_DAYS,
   addLocalDays,
@@ -259,6 +267,7 @@ const AgendaScreen = () => {
   const [editingServiceSnapshots, setEditingServiceSnapshots] = useState([]);
   // Só vira true quando a usuaria pede o preco de hoje de proposito.
   const [refreshPrices, setRefreshPrices] = useState(false);
+  const [durationEditorOpen, setDurationEditorOpen] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [startPickerMode, setStartPickerMode] = useState('date');
   const [conflictConfirmationVisible, setConflictConfirmationVisible] = useState(false);
@@ -267,6 +276,8 @@ const AgendaScreen = () => {
     clientId: null,
     serviceIds: [],
     startAt: new Date(),
+    // null = soma dos servicos; numero = ajuste so deste atendimento.
+    durationMinutes: null,
     depositPercent: DEFAULT_DEPOSIT_PERCENT,
     depositAmount: 0,
     depositMode: 'percent',
@@ -373,6 +384,11 @@ const AgendaScreen = () => {
     () => calculateServicesTotal(selectedServices),
     [selectedServices],
   );
+
+  // Tudo que depende do fim do atendimento (conflito local, intervalo exibido)
+  // usa esta duracao, senao o app divergiria do servidor.
+  const effectiveDuration = getEffectiveDuration(selectedServicesTotal.estimatedTime, form.durationMinutes);
+  const hasCustomDuration = form.durationMinutes !== null;
 
   const catalogTotal = useMemo(
     () => calculateServicesTotal(resolveAppointmentServices({
@@ -912,10 +928,12 @@ const AgendaScreen = () => {
     setEditingAppointmentId(null);
     setEditingServiceSnapshots([]);
     setRefreshPrices(false);
+    setDurationEditorOpen(false);
     setForm({
       clientId: null,
       serviceIds: [],
       startAt: defaultStartAt,
+      durationMinutes: null,
       depositPercent: DEFAULT_DEPOSIT_PERCENT,
       depositAmount: 0,
       depositMode: 'percent',
@@ -933,6 +951,7 @@ const AgendaScreen = () => {
     setEditingAppointmentId(appointment.id);
     setEditingServiceSnapshots(getAppointmentServices(appointment));
     setRefreshPrices(false);
+    setDurationEditorOpen(false);
     setClientSearch('');
     setServiceSearch('');
     const appointmentServiceIds = getAppointmentServiceIds(appointment);
@@ -955,6 +974,7 @@ const AgendaScreen = () => {
       clientId: appointment.clientId,
       serviceIds: appointmentServiceIds,
       startAt: new Date(appointment.startAt),
+      durationMinutes: getInitialCustomDuration(appointment),
       depositPercent: appointmentDepositPercent,
       depositAmount: appointmentDepositAmount,
       depositMode: appointmentDepositPercent === null ? 'manual' : 'percent',
@@ -976,6 +996,7 @@ const AgendaScreen = () => {
     setClientSearchLoading(false);
     setEditingServiceSnapshots([]);
     setRefreshPrices(false);
+    setDurationEditorOpen(false);
   }, []);
 
   const openStartPicker = (mode) => {
@@ -1071,13 +1092,34 @@ const AgendaScreen = () => {
     onChangeValue: handleDepositAmountChange,
   });
 
+  const toggleDurationEditor = () => {
+    animateNextLayout();
+    setDurationEditorOpen((previous) => !previous);
+  };
+
+  const handleDurationStep = (step) => {
+    setForm((prev) => ({
+      ...prev,
+      durationMinutes: stepDuration({
+        defaultMinutes: selectedServicesTotal.estimatedTime,
+        customMinutes: prev.durationMinutes,
+        step,
+      }),
+    }));
+  };
+
+  const resetDuration = () => {
+    animateNextLayout();
+    setForm((prev) => ({ ...prev, durationMinutes: null }));
+  };
+
   const hasLocalAppointmentConflict = () => {
-    if (!form.startAt || selectedServicesTotal.estimatedTime <= 0) {
+    if (!form.startAt || effectiveDuration <= 0) {
       return false;
     }
 
     const nextStartAt = form.startAt;
-    const nextEndAt = new Date(nextStartAt.getTime() + selectedServicesTotal.estimatedTime * 60 * 1000);
+    const nextEndAt = calculateEndAt(nextStartAt, effectiveDuration);
 
     return activeAppointments.some((appointment) => {
       if (isEditing && String(appointment.id) === String(editingAppointmentId)) {
@@ -1136,6 +1178,9 @@ const AgendaScreen = () => {
       // Sem a flag a API preserva o preco congelado; ela so vai quando a
       // usuaria pediu o reajuste na propria tela.
       ...(isEditing && refreshPrices ? { refreshPrices: true } : {}),
+      // Na edicao vai sempre, porque `null` e o que devolve um atendimento
+      // ajustado ao padrao; ausente, a API preservaria o ajuste.
+      ...(hasCustomDuration || isEditing ? { durationMinutes: form.durationMinutes } : {}),
     };
 
     setConflictConfirmationVisible(false);
@@ -1657,6 +1702,11 @@ const AgendaScreen = () => {
               {formatSectionDate(new Date(appointment.startAt))}
               {'  ·  '}
               {formatTime(appointment.startAt)} - {formatTime(appointment.endAt)}
+              {appointment.hasCustomDuration && (
+                <Text style={styles.detailsWhenAdjusted}>
+                  {'  ·  '}duração ajustada ({appointment.durationMinutes} min)
+                </Text>
+              )}
             </Text>
           </View>
 
@@ -1793,6 +1843,7 @@ const AgendaScreen = () => {
         <View style={styles.cardHeaderRow}>
           <Text style={[styles.cardTime, isCanceled && styles.canceledCardText]} numberOfLines={1}>
             {formatTime(item.startAt)} - {formatTime(item.endAt)}
+            {item.hasCustomDuration && <Text style={styles.cardTimeAdjusted}> · ajustado</Text>}
           </Text>
           <View style={styles.cardHeaderActions}>
             <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] || colors.darkGray }]}>
@@ -2140,9 +2191,12 @@ const AgendaScreen = () => {
                           ? form.serviceIds.filter((serviceId) => Number(serviceId) !== Number(service.id))
                           : [...form.serviceIds, service.id];
 
+                        // O ajuste valia para o conjunto anterior de servicos:
+                        // trocar a selecao volta ao padrao do novo conjunto.
                         setForm((prev) => ({
                           ...prev,
                           serviceIds: nextServiceIds,
+                          durationMinutes: null,
                         }));
                       }}
                     >
@@ -2160,9 +2214,55 @@ const AgendaScreen = () => {
                 )}
               </View>
               {selectedServices.length > 0 && (
-                <Text style={styles.selectionSummary}>
-                  {selectedServices.length} serviço(s) - {selectedServicesTotal.estimatedTime} min - {formatCurrency(selectedServicesTotal.price)}
-                </Text>
+                <View style={styles.selectionSummaryRow}>
+                  <Text style={styles.selectionSummary}>{selectedServices.length} serviço(s) - </Text>
+                  <TouchableOpacity
+                    style={styles.durationToggle}
+                    onPress={toggleDurationEditor}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: durationEditorOpen }}
+                    accessibilityLabel={`Duração de ${effectiveDuration} minutos${hasCustomDuration ? ', ajustada' : ''}. Toque para ajustar`}
+                  >
+                    <Text style={[styles.selectionSummary, styles.durationToggleText]}>
+                      {effectiveDuration} min{hasCustomDuration ? ' · ajustado' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.selectionSummary}> - {formatCurrency(selectedServicesTotal.price)}</Text>
+                </View>
+              )}
+              {selectedServices.length > 0 && durationEditorOpen && (
+                <View style={styles.durationEditor}>
+                  <View style={styles.durationSteps}>
+                    {DURATION_STEPS.map((step) => (
+                      <TouchableOpacity
+                        key={step}
+                        style={styles.depositOption}
+                        onPress={() => handleDurationStep(step)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${step > 0 ? 'Aumentar' : 'Diminuir'} ${Math.abs(step)} minutos`}
+                      >
+                        <Text style={styles.depositOptionText}>{formatDurationStep(step)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <View style={styles.priceUpdateRow}>
+                    <Text style={styles.priceUpdateText}>
+                      {formatTime(form.startAt)} → {formatTime(calculateEndAt(form.startAt, effectiveDuration))}
+                    </Text>
+                    {hasCustomDuration && (
+                      <TouchableOpacity
+                        style={styles.priceUpdateAction}
+                        onPress={resetDuration}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Voltar à duração padrão de ${selectedServicesTotal.estimatedTime} minutos`}
+                      >
+                        <Text style={styles.priceUpdateActionText}>
+                          voltar ao padrão ({selectedServicesTotal.estimatedTime} min)
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
               )}
               {showCatalogPriceUpdate && (
                 <View style={styles.priceUpdateRow}>
@@ -2528,6 +2628,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
+  cardTimeAdjusted: {
+    color: colors.darkGray,
+    fontWeight: '400',
+    fontSize: 12,
+  },
   statusBadge: {
     borderRadius: 999,
     paddingHorizontal: 7,
@@ -2630,6 +2735,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     textTransform: 'capitalize',
+  },
+  // O dia da semana vem capitalizado; o aviso de duracao nao.
+  detailsWhenAdjusted: {
+    color: colors.darkGray,
+    textTransform: 'none',
   },
   detailsMoneyRow: {
     marginTop: 14,
@@ -2918,10 +3028,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   selectionSummary: {
-    marginTop: 6,
     color: colors.primary,
     fontSize: 12,
     fontWeight: '700',
+  },
+  selectionSummaryRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  durationToggle: {
+    paddingVertical: 2,
+  },
+  durationToggleText: {
+    textDecorationLine: 'underline',
+  },
+  durationEditor: {
+    marginTop: 8,
+  },
+  durationSteps: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   priceUpdateRow: {
     marginTop: 4,
